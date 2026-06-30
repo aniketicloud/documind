@@ -20,6 +20,18 @@ services:
     volumes:
       - redisdata:/data
 
+  qdrant:
+    image: qdrant/qdrant
+    container_name: unifyhq-qdrant
+    hostname: qdrant
+    ports:
+      - "6335:6333"
+      - "6336:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
 volumes:
   pgdata:
   redisdata:
+  qdrant_storage:

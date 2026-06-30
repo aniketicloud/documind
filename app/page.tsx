@@ -18,16 +18,27 @@ const suggestedPrompts = [
   "Turn notes into tasks",
 ]
 
+function getGreeting(hour: number) {
+  if (hour < 12) {
+    return "Good morning"
+  }
+
+  if (hour < 18) {
+    return "Good afternoon"
+  }
+
+  return "Good evening"
+}
+
 export default async function Page() {
   const session = await auth.api.getSession({
     headers: await headers(),
   })
 
-  const displayName = session?.user.name?.trim() || "Documind user"
-  const firstName = session?.user.name?.trim().split(/\s+/)[0]
+  const displayName = session?.user.name?.trim() || "User"
+  const firstName = session?.user.name?.trim()?.split(/\s+/)?.[0] ?? null
   const email = session?.user.email ?? ""
-  const hour = new Date().getHours()
-  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
+  const greeting = getGreeting(new Date().getHours())
 
   return (
     <div className="min-h-svh bg-background">
@@ -37,7 +48,7 @@ export default async function Page() {
             <div className="space-y-4">
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Documind AI</p>
-                <h1 className="text-xl font-semibold">Claude-style workspace</h1>
+                <h1 className="text-xl font-semibold">AI workspace</h1>
               </div>
               <Button variant="outline" className="w-full justify-start rounded-2xl">
                 + New chat
@@ -126,7 +137,9 @@ export default async function Page() {
                     <p className="text-xs text-muted-foreground">
                       Static UI clone for the post-login chat experience.
                     </p>
-                    <Button className="rounded-full px-4">Send</Button>
+                    <Button type="button" className="rounded-full px-4">
+                      Send
+                    </Button>
                   </div>
                 </div>
               </div>

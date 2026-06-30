@@ -2,6 +2,7 @@ import Link from "next/link"
 import { headers } from "next/headers"
 
 import { SignOutButton } from "@/components/sign-out-button"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { auth } from "@/lib/auth"
@@ -88,8 +89,11 @@ export default async function Page() {
                     A clean assistant view opens as soon as you sign in.
                   </p>
                 </div>
-                <div className="lg:hidden">
-                  <SignOutButton />
+                <div className="flex items-center gap-2">
+                  <ThemeToggle />
+                  <div className="lg:hidden">
+                    <SignOutButton />
+                  </div>
                 </div>
               </div>
             </div>
@@ -150,12 +154,15 @@ export default async function Page() {
         <div className="flex min-h-svh items-center justify-center p-6 md:p-10">
           <div className="w-full max-w-xl rounded-2xl border bg-card p-8 shadow-sm">
             <div className="flex flex-col gap-4">
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Better Auth is configured</p>
-                <h1 className="text-2xl font-semibold">Sign in or create an account</h1>
-                <p className="text-sm text-muted-foreground">
-                  This project now uses Better Auth email and password flows.
-                </p>
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Better Auth is configured</p>
+                  <h1 className="text-2xl font-semibold">Sign in or create an account</h1>
+                  <p className="text-sm text-muted-foreground">
+                    This project now uses Better Auth email and password flows.
+                  </p>
+                </div>
+                <ThemeToggle />
               </div>
               <div className="flex gap-3">
                 <Button asChild>

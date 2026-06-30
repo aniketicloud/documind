@@ -13,8 +13,8 @@ function ThemeToggle() {
     () => false
   )
 
-  const isDark = resolvedTheme !== "light"
-  const nextTheme = isDark ? "light" : "dark"
+  const currentTheme = mounted ? (resolvedTheme === "light" ? "light" : "dark") : "dark"
+  const nextTheme = currentTheme === "dark" ? "light" : "dark"
 
   return (
     <Button
@@ -23,9 +23,10 @@ function ThemeToggle() {
       size="sm"
       className="rounded-full shadow-sm"
       aria-label={mounted ? `Switch to ${nextTheme} mode` : "Toggle theme"}
+      disabled={!mounted}
       onClick={() => setTheme(nextTheme)}
     >
-      {mounted ? (isDark ? "Dark mode" : "Light mode") : "Dark mode"}
+      {mounted ? `${nextTheme[0].toUpperCase()}${nextTheme.slice(1)} mode` : "Dark mode"}
     </Button>
   )
 }

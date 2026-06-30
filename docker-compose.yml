@@ -11,5 +11,15 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql
 
+  redis:
+    image: dhi.io/redis:8.8
+    restart: always
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
 volumes:
   pgdata:
+  redisdata:

@@ -23,9 +23,11 @@ export default async function Page() {
     headers: await headers(),
   })
 
-  const displayName = session?.user.name?.trim() || "there"
-  const firstName = displayName.split(" ")[0]
+  const displayName = session?.user.name?.trim() || "Documind user"
+  const firstName = session?.user.name?.trim().split(/\s+/)[0]
   const email = session?.user.email ?? ""
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
 
   return (
     <div className="min-h-svh bg-background">
@@ -68,7 +70,9 @@ export default async function Page() {
               <div className="mx-auto flex w-full max-w-4xl items-start justify-between gap-4">
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">Simple AI chat clone</p>
-                  <h2 className="text-2xl font-semibold">Good evening, {firstName}</h2>
+                  <h2 className="text-2xl font-semibold">
+                    {firstName ? `${greeting}, ${firstName}` : greeting}
+                  </h2>
                   <p className="text-sm text-muted-foreground">
                     A clean assistant view opens as soon as you sign in.
                   </p>

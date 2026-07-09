@@ -22,7 +22,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant
-    container_name: unifyhq-qdrant
+    container_name: documind-qdrant
     hostname: qdrant
     ports:
       - "6335:6333"

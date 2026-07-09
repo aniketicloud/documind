@@ -1,5 +1,6 @@
 import Link from "next/link"
 
+import { ModeToggle } from "@/components/mode-toggle"
 import { Button } from "@/components/ui/button"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { CommandIcon } from "@hugeicons/core-free-icons"
@@ -34,6 +35,7 @@ export function MarketingHeader() {
           </nav>
         </div>
         <div className="flex items-center gap-2">
+          <ModeToggle />
           <Button asChild variant="ghost" size="sm">
             <Link href="/login">Sign in</Link>
           </Button>

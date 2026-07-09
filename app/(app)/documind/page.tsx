@@ -1,12 +1,11 @@
+import { DocumindChat } from "@/components/documind-chat"
 import { SiteHeader } from "@/components/site-header"
 
 export default function DocumindPage() {
   return (
-    <>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <SiteHeader title="Documind" />
-      <div className="flex flex-1 items-center justify-center p-6">
-        <p className="text-sm text-muted-foreground">Coming soon</p>
-      </div>
-    </>
+      <DocumindChat />
+    </div>
   )
 }

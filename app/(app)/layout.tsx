@@ -27,6 +27,7 @@ export default async function AppLayout({
 
   return (
     <SidebarProvider
+      className="h-svh overflow-hidden"
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
@@ -35,7 +36,9 @@ export default async function AppLayout({
       }
     >
       <AppSidebar variant="inset" user={user} />
-      <SidebarInset>{children}</SidebarInset>
+      <SidebarInset className="min-h-0 overflow-hidden">
+        {children}
+      </SidebarInset>
     </SidebarProvider>
   )
 }

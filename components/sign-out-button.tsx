@@ -22,6 +22,7 @@ export function SignOutButton() {
         return
       }
 
+      router.push("/login")
       router.refresh()
     })
   }

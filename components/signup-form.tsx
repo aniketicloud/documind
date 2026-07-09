@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 
@@ -15,8 +14,6 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { LayoutBottomIcon } from "@hugeicons/core-free-icons"
 
 export function SignupForm({
   className,
@@ -40,7 +37,7 @@ export function SignupForm({
         name,
         email,
         password,
-        callbackURL: "/",
+        callbackURL: "/dashboard",
       })
 
       if (signUpError) {
@@ -48,7 +45,7 @@ export function SignupForm({
         return
       }
 
-      router.push("/")
+      router.push("/dashboard")
       router.refresh()
     })
   }
@@ -57,21 +54,15 @@ export function SignupForm({
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <form onSubmit={handleSubmit}>
         <FieldGroup>
-          <div className="flex flex-col items-center gap-2 text-center">
-            <Link href="/" className="flex flex-col items-center gap-2 font-medium">
-              <div className="flex size-8 items-center justify-center rounded-md">
-                <HugeiconsIcon icon={LayoutBottomIcon} strokeWidth={2} className="size-6" />
-              </div>
-              <span className="sr-only">Documind</span>
-            </Link>
-            <h1 className="text-xl font-bold">Create your Documind account</h1>
-            <FieldDescription>
-              Already have an account? <Link href="/login">Sign in</Link>
-            </FieldDescription>
-          </div>
           <Field>
             <FieldLabel htmlFor="name">Name</FieldLabel>
-            <Input id="name" name="name" type="text" autoComplete="name" required />
+            <Input
+              id="name"
+              name="name"
+              type="text"
+              autoComplete="name"
+              required
+            />
           </Field>
           <Field>
             <FieldLabel htmlFor="email">Email</FieldLabel>
@@ -104,7 +95,7 @@ export function SignupForm({
           <FieldError>{error}</FieldError>
         </FieldGroup>
       </form>
-      <FieldDescription className="px-6 text-center">
+      <FieldDescription className="text-center">
         New accounts are created with Better Auth email and password.
       </FieldDescription>
     </div>

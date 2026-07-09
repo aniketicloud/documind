@@ -39,6 +39,11 @@ const navData = {
       icon: <HugeiconsIcon icon={DashboardSquare01Icon} strokeWidth={2} />,
     },
     {
+      title: "Documind",
+      url: "/documind",
+      icon: <HugeiconsIcon icon={File01Icon} strokeWidth={2} />,
+    },
+    {
       title: "Analytics",
       url: "#",
       icon: <HugeiconsIcon icon={ChartHistogramIcon} strokeWidth={2} />,

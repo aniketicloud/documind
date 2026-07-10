@@ -14,6 +14,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
 
 export function SignupForm({
   className,
@@ -89,7 +90,14 @@ export function SignupForm({
           </Field>
           <Field>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Creating account..." : "Create Account"}
+              {isPending ? (
+                <>
+                  <Spinner data-icon="inline-start" />
+                  Creating account…
+                </>
+              ) : (
+                "Create Account"
+              )}
             </Button>
           </Field>
           <FieldError>{error}</FieldError>

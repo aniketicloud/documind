@@ -43,6 +43,7 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller"
 import { SiteHeader } from "@/components/site-header"
+import { Spinner } from "@/components/ui/spinner"
 import {
   createChat,
   getChat,
@@ -454,7 +455,8 @@ export function ChatWorkspace({
       <SiteHeader title={headerTitle} />
 
       {loadingChat ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+          <Spinner className="size-6" />
           Loading chat…
         </div>
       ) : (
@@ -611,7 +613,8 @@ export function ChatWorkspace({
                         </DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         {libraryLoading ? (
-                          <p className="px-2 py-3 text-xs text-muted-foreground">
+                          <p className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
+                            <Spinner className="size-3.5" />
                             Loading…
                           </p>
                         ) : library.length === 0 ? (
@@ -652,11 +655,15 @@ export function ChatWorkspace({
                       void handleSend()
                     }}
                   >
-                    <HugeiconsIcon
-                      icon={SentIcon}
-                      strokeWidth={2}
-                      data-icon="inline-start"
-                    />
+                    {uploading || isBusy ? (
+                      <Spinner data-icon="inline-start" />
+                    ) : (
+                      <HugeiconsIcon
+                        icon={SentIcon}
+                        strokeWidth={2}
+                        data-icon="inline-start"
+                      />
+                    )}
                     {uploading ? "Uploading…" : isBusy ? "Sending…" : "Send"}
                   </Button>
                 </div>

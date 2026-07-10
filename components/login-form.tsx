@@ -14,6 +14,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
 
 export function LoginForm({
   className,
@@ -75,7 +76,14 @@ export function LoginForm({
           </Field>
           <Field>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Signing in..." : "Sign In"}
+              {isPending ? (
+                <>
+                  <Spinner data-icon="inline-start" />
+                  Signing in…
+                </>
+              ) : (
+                "Sign In"
+              )}
             </Button>
           </Field>
           <FieldError>{error}</FieldError>

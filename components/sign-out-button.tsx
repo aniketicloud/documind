@@ -5,6 +5,7 @@ import { useState, useTransition } from "react"
 
 import { authClient } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/spinner"
 
 export function SignOutButton() {
   const router = useRouter()
@@ -30,7 +31,14 @@ export function SignOutButton() {
   return (
     <div className="flex flex-col gap-2">
       <Button onClick={handleSignOut} disabled={isPending} variant="outline">
-        {isPending ? "Signing out..." : "Sign Out"}
+        {isPending ? (
+          <>
+            <Spinner data-icon="inline-start" />
+            Signing out…
+          </>
+        ) : (
+          "Sign Out"
+        )}
       </Button>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </div>

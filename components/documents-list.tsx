@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/attachment"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Spinner } from "@/components/ui/spinner"
 import {
   deleteDocument,
   describeFile,
@@ -123,10 +123,9 @@ export function DocumentsList() {
 
   if (loading) {
     return (
-      <div className="space-y-3">
-        {Array.from({ length: 3 }).map((_, index) => (
-          <Skeleton key={index} className="h-16 w-full rounded-xl" />
-        ))}
+      <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+        <Spinner className="size-6" />
+        Loading documents…
       </div>
     )
   }
@@ -150,7 +149,11 @@ export function DocumentsList() {
             disabled={refreshing}
             onClick={() => void load({ soft: true })}
           >
-            <HugeiconsIcon icon={RefreshIcon} strokeWidth={2} />
+            {refreshing ? (
+              <Spinner />
+            ) : (
+              <HugeiconsIcon icon={RefreshIcon} strokeWidth={2} />
+            )}
             Refresh
           </Button>
         </div>
@@ -261,7 +264,14 @@ export function DocumentsList() {
                 void handleConfirmDelete()
               }}
             >
-              {deletingId ? "Deleting…" : "Delete"}
+              {deletingId ? (
+                <>
+                  <Spinner data-icon="inline-start" />
+                  Deleting…
+                </>
+              ) : (
+                "Delete"
+              )}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

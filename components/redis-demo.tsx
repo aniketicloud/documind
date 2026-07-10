@@ -15,7 +15,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Spinner } from "@/components/ui/spinner"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   Add01Icon,
@@ -232,7 +232,15 @@ export function RedisDemo() {
                 />
               </div>
               <Button type="submit" disabled={busy}>
-                <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
+                {busy ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <HugeiconsIcon
+                    icon={Add01Icon}
+                    strokeWidth={2}
+                    data-icon="inline-start"
+                  />
+                )}
                 Create
               </Button>
             </form>
@@ -308,15 +316,19 @@ export function RedisDemo() {
             disabled={loading || busy}
             onClick={() => void load()}
           >
-            <HugeiconsIcon icon={RefreshIcon} strokeWidth={2} />
+            {loading ? (
+              <Spinner />
+            ) : (
+              <HugeiconsIcon icon={RefreshIcon} strokeWidth={2} />
+            )}
             Refresh
           </Button>
         </CardHeader>
         <CardContent className="space-y-3">
           {loading ? (
-            <div className="space-y-2">
-              <Skeleton className="h-12 w-full rounded-lg" />
-              <Skeleton className="h-12 w-full rounded-lg" />
+            <div className="flex min-h-24 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+              <Spinner className="size-6" />
+              Loading keys…
             </div>
           ) : items.length === 0 ? (
             <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">

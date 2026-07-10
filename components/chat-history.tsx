@@ -33,6 +33,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
+import { Spinner } from "@/components/ui/spinner"
 import {
   deleteChat,
   listChats,
@@ -169,7 +170,8 @@ export function ChatHistory() {
           <SidebarMenu>
             {loading ? (
               <SidebarMenuItem>
-                <span className="px-2 text-xs text-muted-foreground">
+                <span className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
+                  <Spinner className="size-3.5" />
                   Loading…
                 </span>
               </SidebarMenuItem>
@@ -266,7 +268,14 @@ export function ChatHistory() {
                 void handleConfirmRename()
               }}
             >
-              {renaming ? "Saving…" : "Save"}
+              {renaming ? (
+                <>
+                  <Spinner data-icon="inline-start" />
+                  Saving…
+                </>
+              ) : (
+                "Save"
+              )}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -307,7 +316,14 @@ export function ChatHistory() {
                 void handleConfirmDelete()
               }}
             >
-              {deleting ? "Deleting…" : "Delete"}
+              {deleting ? (
+                <>
+                  <Spinner data-icon="inline-start" />
+                  Deleting…
+                </>
+              ) : (
+                "Delete"
+              )}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

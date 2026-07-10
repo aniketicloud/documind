@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import { Spinner } from "@/components/ui/spinner"
 import { authClient } from "@/lib/auth-client"
 import { cn } from "@/lib/utils"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -175,11 +176,15 @@ export function SettingsDialog({
                       onClick={handleSignOut}
                       className="shrink-0"
                     >
-                      <HugeiconsIcon
-                        icon={Logout01Icon}
-                        strokeWidth={2}
-                        data-icon="inline-start"
-                      />
+                      {isPending ? (
+                        <Spinner data-icon="inline-start" />
+                      ) : (
+                        <HugeiconsIcon
+                          icon={Logout01Icon}
+                          strokeWidth={2}
+                          data-icon="inline-start"
+                        />
+                      )}
                       {isPending ? "Signing out…" : "Log out"}
                     </Button>
                   </div>

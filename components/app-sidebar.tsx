@@ -23,6 +23,7 @@ import {
   CommandIcon,
   Database01Icon,
   PlusSignCircleIcon,
+  ServerStack01Icon,
 } from "@hugeicons/core-free-icons"
 
 export function AppSidebar({
@@ -85,6 +86,18 @@ export function AppSidebar({
                   <Link href="/documents">
                     <HugeiconsIcon icon={Database01Icon} strokeWidth={2} />
                     <span>My documents</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Redis demo"
+                  isActive={pathname === "/redis"}
+                >
+                  <Link href="/redis">
+                    <HugeiconsIcon icon={ServerStack01Icon} strokeWidth={2} />
+                    <span>Redis demo</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

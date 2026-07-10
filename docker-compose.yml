@@ -14,11 +14,17 @@ services:
   redis:
     image: dhi.io/redis:8.8
     restart: always
-    command: redis-server --appendonly yes
+    # protected-mode no: host apps reach Redis via Docker port publish (not loopback from Redis's view)
+    command: redis-server --appendonly yes --protected-mode no
     ports:
       - "6379:6379"
     volumes:
       - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   qdrant:
     image: qdrant/qdrant

@@ -33,6 +33,12 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty"
 import { Spinner } from "@/components/ui/spinner"
 import {
   deleteChat,
@@ -177,9 +183,14 @@ export function ChatHistory() {
               </SidebarMenuItem>
             ) : chats.length === 0 ? (
               <SidebarMenuItem>
-                <span className="px-2 text-xs text-muted-foreground">
-                  No chats yet
-                </span>
+                <Empty className="border-0 p-2">
+                  <EmptyHeader>
+                    <EmptyTitle className="text-xs">No chats yet</EmptyTitle>
+                    <EmptyDescription className="text-xs">
+                      Start a new chat to see it here.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               </SidebarMenuItem>
             ) : (
               chats.map((chat) => (

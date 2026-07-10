@@ -1,6 +1,12 @@
+import {
+  resolveDocumentContentType,
+  validateDocumentFile,
+} from "@/lib/document-types"
+
 export type PresignResponse = {
   documentId: string
   uploadUrl: string
+  contentType?: string
 }
 
 export type ConfirmedDocument = {
@@ -36,12 +42,23 @@ export function describeFile(name: string, size?: number | null) {
 
 /** Presign → PUT to RustFS → confirm metadata in Postgres */
 export async function uploadDocument(file: File): Promise<ConfirmedDocument> {
+  const validation = validateDocumentFile({
+    filename: file.name,
+    contentType: file.type,
+    size: file.size,
+  })
+  if (!validation.ok) {
+    throw new Error(validation.error)
+  }
+
+  const contentType = resolveDocumentContentType(file.name, file.type)
+
   const presignRes = await fetch("/api/documents/presign", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       filename: file.name,
-      contentType: file.type || "application/octet-stream",
+      contentType,
       size: file.size,
     }),
   })
@@ -54,11 +71,12 @@ export async function uploadDocument(file: File): Promise<ConfirmedDocument> {
   }
 
   const presign = (await presignRes.json()) as PresignResponse
+  const putType = presign.contentType || contentType
 
   const putRes = await fetch(presign.uploadUrl, {
     method: "PUT",
     headers: {
-      "Content-Type": file.type || "application/octet-stream",
+      "Content-Type": putType,
     },
     body: file,
   })

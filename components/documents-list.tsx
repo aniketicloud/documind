@@ -25,12 +25,26 @@ import {
 } from "@/components/ui/attachment"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
 import { Spinner } from "@/components/ui/spinner"
+import {
+  DOCUMENT_ACCEPT,
+  DOCUMENT_EXTENSIONS,
+  validateDocumentFile,
+} from "@/lib/document-types"
 import {
   deleteDocument,
   describeFile,
   getDocumentDownloadUrl,
   listDocuments,
+  uploadDocument,
   type ListedDocument,
 } from "@/lib/documents"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -39,6 +53,7 @@ import {
   Download04Icon,
   File01Icon,
   RefreshIcon,
+  Upload04Icon,
 } from "@hugeicons/core-free-icons"
 
 function statusVariant(
@@ -53,11 +68,13 @@ export function DocumentsList() {
   const [documents, setDocuments] = React.useState<ListedDocument[]>([])
   const [loading, setLoading] = React.useState(true)
   const [refreshing, setRefreshing] = React.useState(false)
+  const [uploading, setUploading] = React.useState(false)
   const [downloadingId, setDownloadingId] = React.useState<string | null>(null)
   const [deletingId, setDeletingId] = React.useState<string | null>(null)
   const [docToDelete, setDocToDelete] = React.useState<ListedDocument | null>(
     null
   )
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   const load = React.useCallback(async (opts?: { soft?: boolean }) => {
     if (opts?.soft) {
@@ -82,6 +99,42 @@ export function DocumentsList() {
   React.useEffect(() => {
     void load()
   }, [load])
+
+  const handleUploadFiles = async (fileList: FileList | null) => {
+    if (!fileList?.length) return
+
+    const files = Array.from(fileList)
+    setUploading(true)
+
+    let successCount = 0
+    for (const file of files) {
+      const validation = validateDocumentFile({
+        filename: file.name,
+        contentType: file.type,
+        size: file.size,
+      })
+      if (!validation.ok) {
+        toast.error(`${file.name}: ${validation.error}`)
+        continue
+      }
+
+      try {
+        const doc = await uploadDocument(file)
+        successCount += 1
+        setDocuments((current) => [doc, ...current])
+        toast.success(`${doc.name} uploaded`)
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Upload failed"
+        toast.error(`${file.name}: ${message}`)
+      }
+    }
+
+    if (successCount > 0) {
+      await load({ soft: true })
+    }
+    setUploading(false)
+  }
 
   const handleDownload = async (doc: ListedDocument) => {
     if (doc.status !== "ready") {
@@ -132,13 +185,41 @@ export function DocumentsList() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           {documents.length === 0
             ? "No documents yet."
             : `${documents.length} document${documents.length === 1 ? "" : "s"}`}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={DOCUMENT_ACCEPT}
+            multiple
+            className="sr-only"
+            onChange={(event) => {
+              void handleUploadFiles(event.target.files)
+              event.target.value = ""
+            }}
+          />
+          <Button
+            type="button"
+            size="sm"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {uploading ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <HugeiconsIcon
+                icon={Upload04Icon}
+                strokeWidth={2}
+                data-icon="inline-start"
+              />
+            )}
+            {uploading ? "Uploading…" : "Upload"}
+          </Button>
           <Button asChild variant="outline" size="sm">
             <Link href="/new">New chat</Link>
           </Button>
@@ -146,7 +227,7 @@ export function DocumentsList() {
             type="button"
             variant="ghost"
             size="sm"
-            disabled={refreshing}
+            disabled={refreshing || uploading}
             onClick={() => void load({ soft: true })}
           >
             {refreshing ? (
@@ -159,19 +240,40 @@ export function DocumentsList() {
         </div>
       </div>
 
+      <p className="text-xs text-muted-foreground">
+        Allowed types: {DOCUMENT_EXTENSIONS.join(", ")} · max 50MB
+      </p>
+
       {documents.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            Upload a file from{" "}
-            <Link
-              href="/new"
-              className="font-medium text-foreground underline-offset-4 hover:underline"
+        <Empty className="border border-dashed py-10">
+          <EmptyHeader>
+            <EmptyMedia variant="icon" className="size-12 rounded-2xl [&_svg]:size-6">
+              <HugeiconsIcon icon={File01Icon} strokeWidth={2} />
+            </EmptyMedia>
+            <EmptyTitle>Upload your first document</EmptyTitle>
+            <EmptyDescription>
+              PDF, Word, Excel, TXT, Markdown, and other text files.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button
+              type="button"
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
             >
-              New chat
-            </Link>{" "}
-            to see it listed here.
-          </p>
-        </div>
+              {uploading ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <HugeiconsIcon
+                  icon={Upload04Icon}
+                  strokeWidth={2}
+                  data-icon="inline-start"
+                />
+              )}
+              Choose files
+            </Button>
+          </EmptyContent>
+        </Empty>
       ) : (
         <ul className="space-y-2">
           {documents.map((doc) => (
@@ -247,8 +349,11 @@ export function DocumentsList() {
             <AlertDialogDescription>
               {docToDelete ? (
                 <>
-                  Delete <span className="font-medium text-foreground">{docToDelete.name}</span>?
-                  This removes it from your account and from storage. This
+                  Delete{" "}
+                  <span className="font-medium text-foreground">
+                    {docToDelete.name}
+                  </span>
+                  ? This removes it from your account and from storage. This
                   cannot be undone.
                 </>
               ) : null}

@@ -4,24 +4,15 @@ import { db } from "@/db"
 import { documents } from "@/db/schema"
 import { buildUserObjectKey } from "@/lib/documents-access"
 import {
+  resolveDocumentContentType,
+  validateDocumentFile,
+} from "@/lib/document-types"
+import {
   createPresignedUploadUrl,
   ensureBucket,
   sanitizeFilename,
 } from "@/lib/s3"
 import { requireSession } from "@/lib/session"
-
-const MAX_BYTES = 50 * 1024 * 1024
-
-const ALLOWED_TYPES = new Set([
-  "application/pdf",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "text/plain",
-  "text/markdown",
-  "text/csv",
-  "application/rtf",
-  "application/octet-stream",
-])
 
 export async function POST(request: Request) {
   const session = await requireSession()
@@ -42,47 +33,38 @@ export async function POST(request: Request) {
   }
 
   const filename = body.filename?.trim()
-  const contentType = body.contentType?.trim() || "application/octet-stream"
   const size = body.size
+  const validation = validateDocumentFile({
+    filename: filename ?? "",
+    contentType: body.contentType,
+    size,
+  })
 
-  if (!filename) {
-    return NextResponse.json({ error: "filename is required" }, { status: 400 })
+  if (!validation.ok) {
+    return NextResponse.json({ error: validation.error }, { status: 400 })
   }
 
-  if (typeof size !== "number" || !Number.isFinite(size) || size <= 0) {
+  if (typeof size !== "number" || !Number.isFinite(size)) {
     return NextResponse.json(
       { error: "size must be a positive number" },
       { status: 400 }
     )
   }
 
-  if (size > MAX_BYTES) {
-    return NextResponse.json(
-      { error: "File exceeds 50MB limit" },
-      { status: 400 }
-    )
-  }
-
-  if (!ALLOWED_TYPES.has(contentType)) {
-    return NextResponse.json(
-      { error: `Unsupported content type: ${contentType}` },
-      { status: 400 }
-    )
-  }
+  const contentType = resolveDocumentContentType(filename!, body.contentType)
 
   try {
     await ensureBucket()
 
     const userId = session.user.id
     const documentId = crypto.randomUUID()
-    const safeName = sanitizeFilename(filename)
-    // Always under this user — never accept client-provided keys/paths
+    const safeName = sanitizeFilename(filename!)
     const key = buildUserObjectKey(userId, documentId, safeName)
 
     await db.insert(documents).values({
       id: documentId,
       userId,
-      name: filename,
+      name: filename!,
       key,
       contentType,
       size,
@@ -94,10 +76,10 @@ export async function POST(request: Request) {
       contentType,
     })
 
-    // Do not return storage key — reduces accidental leakage in client logs
     return NextResponse.json({
       documentId,
       uploadUrl,
+      contentType,
     })
   } catch (error) {
     console.error("[documents/presign]", error)

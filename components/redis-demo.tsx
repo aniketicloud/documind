@@ -14,11 +14,19 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   Add01Icon,
+  Database01Icon,
   Delete02Icon,
   RefreshIcon,
   Search01Icon,
@@ -331,9 +339,17 @@ export function RedisDemo() {
               Loading keys…
             </div>
           ) : items.length === 0 ? (
-            <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-              No keys yet. Create one above.
-            </p>
+            <Empty className="border border-dashed py-8">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <HugeiconsIcon icon={Database01Icon} strokeWidth={2} />
+                </EmptyMedia>
+                <EmptyTitle>No keys yet</EmptyTitle>
+                <EmptyDescription>
+                  Create a key above to verify Redis CRUD is working.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <ul className="divide-y rounded-xl border">
               {items.map((item) => (

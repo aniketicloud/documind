@@ -43,6 +43,13 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller"
 import { SiteHeader } from "@/components/site-header"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
 import { Spinner } from "@/components/ui/spinner"
 import {
   createChat,
@@ -51,6 +58,7 @@ import {
   type ChatMessageDTO,
   type ChatSummary,
 } from "@/lib/chat-client"
+import { DOCUMENT_ACCEPT, validateDocumentFile } from "@/lib/document-types"
 import {
   describeFile,
   listDocuments,
@@ -77,9 +85,6 @@ type AttachedDocument = {
   error?: string
   source: "upload" | "library"
 }
-
-const ACCEPTED_TYPES =
-  ".pdf,.doc,.docx,.txt,.md,.csv,.rtf,application/pdf,text/plain"
 
 const SUGGESTIONS = [
   "Summarize this document",
@@ -195,17 +200,22 @@ function ChatMessageRow({ message }: { message: ChatMessageDTO }) {
 
 function EmptyState() {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-3 px-4 py-16 text-center">
-      <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-        <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-6" />
-      </div>
-      <h2 className="text-xl font-semibold tracking-tight">
-        How can I help you today?
-      </h2>
-      <p className="max-w-md text-sm text-muted-foreground">
-        Start a new chat by sending a message or uploading a document. Your
-        conversation will appear in Recent on the left.
-      </p>
+    <div className="mx-auto flex w-full max-w-3xl flex-1 items-center justify-center px-4 py-16">
+      <Empty className="border-0">
+        <EmptyHeader>
+          <EmptyMedia
+            variant="icon"
+            className="size-12 rounded-2xl bg-primary/10 text-primary [&_svg]:size-6"
+          >
+            <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} />
+          </EmptyMedia>
+          <EmptyTitle className="text-xl">How can I help you today?</EmptyTitle>
+          <EmptyDescription>
+            Start a new chat by sending a message or uploading a document. Your
+            conversation will appear in Recent on the left.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     </div>
   )
 }
@@ -297,6 +307,16 @@ export function ChatWorkspace({
     if (!fileList?.length) return
 
     for (const file of Array.from(fileList)) {
+      const validation = validateDocumentFile({
+        filename: file.name,
+        contentType: file.type,
+        size: file.size,
+      })
+      if (!validation.ok) {
+        toast.error(`${file.name}: ${validation.error}`)
+        continue
+      }
+
       const localId = crypto.randomUUID()
       setAttachments((current) => [
         ...current,
@@ -572,7 +592,7 @@ export function ChatWorkspace({
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept={ACCEPTED_TYPES}
+                      accept={DOCUMENT_ACCEPT}
                       multiple
                       className="sr-only"
                       onChange={(event) => {
@@ -618,9 +638,17 @@ export function ChatWorkspace({
                             Loading…
                           </p>
                         ) : library.length === 0 ? (
-                          <p className="px-2 py-3 text-xs text-muted-foreground">
-                            No ready documents yet.
-                          </p>
+                          <Empty className="border-0 p-3">
+                            <EmptyHeader>
+                              <EmptyTitle className="text-xs">
+                                No documents yet
+                              </EmptyTitle>
+                              <EmptyDescription className="text-xs">
+                                Upload a PDF, Word, Excel, or text file to use
+                                it here.
+                              </EmptyDescription>
+                            </EmptyHeader>
+                          </Empty>
                         ) : (
                           library.map((doc) => (
                             <DropdownMenuCheckboxItem

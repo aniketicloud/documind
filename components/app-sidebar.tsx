@@ -2,103 +2,28 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 
-import { NavDocuments } from "@/components/nav-documents"
-import { NavMain } from "@/components/nav-main"
-import { NavSecondary } from "@/components/nav-secondary"
+import { ChatHistory } from "@/components/chat-history"
 import { NavUser } from "@/components/nav-user"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
 } from "@/components/ui/sidebar"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
-  DashboardSquare01Icon,
-  ChartHistogramIcon,
-  Folder01Icon,
-  UserGroupIcon,
-  File01Icon,
-  Settings05Icon,
-  HelpCircleIcon,
-  SearchIcon,
-  Database01Icon,
-  Analytics01Icon,
   CommandIcon,
+  Database01Icon,
+  PlusSignCircleIcon,
 } from "@hugeicons/core-free-icons"
-
-const navData = {
-  navMain: [
-    {
-      title: "Dashboard",
-      url: "/dashboard",
-      icon: <HugeiconsIcon icon={DashboardSquare01Icon} strokeWidth={2} />,
-    },
-    {
-      title: "Documind",
-      url: "/documind",
-      icon: <HugeiconsIcon icon={File01Icon} strokeWidth={2} />,
-    },
-    {
-      title: "My documents",
-      url: "/documents",
-      icon: <HugeiconsIcon icon={Database01Icon} strokeWidth={2} />,
-    },
-    {
-      title: "Analytics",
-      url: "#",
-      icon: <HugeiconsIcon icon={ChartHistogramIcon} strokeWidth={2} />,
-    },
-    {
-      title: "Projects",
-      url: "#",
-      icon: <HugeiconsIcon icon={Folder01Icon} strokeWidth={2} />,
-    },
-    {
-      title: "Team",
-      url: "#",
-      icon: <HugeiconsIcon icon={UserGroupIcon} strokeWidth={2} />,
-    },
-  ],
-  navSecondary: [
-    {
-      title: "Settings",
-      url: "#",
-      icon: <HugeiconsIcon icon={Settings05Icon} strokeWidth={2} />,
-    },
-    {
-      title: "Get Help",
-      url: "#",
-      icon: <HugeiconsIcon icon={HelpCircleIcon} strokeWidth={2} />,
-    },
-    {
-      title: "Search",
-      url: "#",
-      icon: <HugeiconsIcon icon={SearchIcon} strokeWidth={2} />,
-    },
-  ],
-  documents: [
-    {
-      name: "Data Library",
-      url: "#",
-      icon: <HugeiconsIcon icon={Database01Icon} strokeWidth={2} />,
-    },
-    {
-      name: "Reports",
-      url: "#",
-      icon: <HugeiconsIcon icon={Analytics01Icon} strokeWidth={2} />,
-    },
-    {
-      name: "Word Assistant",
-      url: "#",
-      icon: <HugeiconsIcon icon={File01Icon} strokeWidth={2} />,
-    },
-  ],
-}
 
 export function AppSidebar({
   user,
@@ -110,6 +35,8 @@ export function AppSidebar({
     avatar: string
   }
 }) {
+  const pathname = usePathname()
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -119,7 +46,7 @@ export function AppSidebar({
               asChild
               className="data-[slot=sidebar-menu-button]:p-1.5!"
             >
-              <Link href="/dashboard">
+              <Link href="/new">
                 <HugeiconsIcon
                   icon={CommandIcon}
                   strokeWidth={2}
@@ -131,14 +58,47 @@ export function AppSidebar({
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
+
       <SidebarContent>
-        <NavMain items={navData.navMain} />
-        <NavDocuments items={navData.documents} />
-        <NavSecondary items={navData.navSecondary} className="mt-auto" />
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="New chat"
+                  isActive={pathname === "/new"}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/90 active:text-primary-foreground"
+                >
+                  <Link href="/new">
+                    <HugeiconsIcon icon={PlusSignCircleIcon} strokeWidth={2} />
+                    <span>New chat</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="My documents"
+                  isActive={pathname === "/documents"}
+                >
+                  <Link href="/documents">
+                    <HugeiconsIcon icon={Database01Icon} strokeWidth={2} />
+                    <span>My documents</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <ChatHistory />
       </SidebarContent>
+
       <SidebarFooter>
         <NavUser user={user} />
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   )
 }

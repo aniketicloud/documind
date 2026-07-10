@@ -37,7 +37,7 @@ export function SignupForm({
         name,
         email,
         password,
-        callbackURL: "/dashboard",
+        callbackURL: "/new",
       })
 
       if (signUpError) {
@@ -45,7 +45,7 @@ export function SignupForm({
         return
       }
 
-      router.push("/dashboard")
+      router.push("/new")
       router.refresh()
     })
   }

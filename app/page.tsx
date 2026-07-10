@@ -147,7 +147,7 @@ export default async function Page() {
   })
 
   if (session) {
-    redirect("/dashboard")
+    redirect("/new")
   }
 
   return (

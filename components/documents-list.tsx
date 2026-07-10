@@ -141,7 +141,7 @@ export function DocumentsList() {
         </p>
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link href="/documind">Upload in Documind</Link>
+            <Link href="/new">New chat</Link>
           </Button>
           <Button
             type="button"
@@ -161,10 +161,10 @@ export function DocumentsList() {
           <p className="text-sm text-muted-foreground">
             Upload a file from{" "}
             <Link
-              href="/documind"
+              href="/new"
               className="font-medium text-foreground underline-offset-4 hover:underline"
             >
-              Documind
+              New chat
             </Link>{" "}
             to see it listed here.
           </p>

@@ -19,7 +19,7 @@ export default async function SignupPage() {
   })
 
   if (session) {
-    redirect("/dashboard")
+    redirect("/new")
   }
 
   return (

@@ -35,7 +35,7 @@ export function LoginForm({
       const { error: signInError } = await authClient.signIn.email({
         email,
         password,
-        callbackURL: "/dashboard",
+        callbackURL: "/new",
       })
 
       if (signInError) {
@@ -43,7 +43,7 @@ export function LoginForm({
         return
       }
 
-      router.push("/dashboard")
+      router.push("/new")
       router.refresh()
     })
   }

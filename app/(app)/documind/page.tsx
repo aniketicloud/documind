@@ -1,11 +1,6 @@
-import { DocumindChat } from "@/components/documind-chat"
-import { SiteHeader } from "@/components/site-header"
+import { redirect } from "next/navigation"
 
-export default function DocumindPage() {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <SiteHeader title="Documind" />
-      <DocumindChat />
-    </div>
-  )
+/** Legacy route — Documind chat now starts at /new */
+export default function DocumindRedirectPage() {
+  redirect("/new")
 }

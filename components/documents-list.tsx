@@ -5,6 +5,16 @@ import Link from "next/link"
 import { toast } from "sonner"
 
 import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Attachment,
   AttachmentAction,
   AttachmentActions,
@@ -45,6 +55,9 @@ export function DocumentsList() {
   const [refreshing, setRefreshing] = React.useState(false)
   const [downloadingId, setDownloadingId] = React.useState<string | null>(null)
   const [deletingId, setDeletingId] = React.useState<string | null>(null)
+  const [docToDelete, setDocToDelete] = React.useState<ListedDocument | null>(
+    null
+  )
 
   const load = React.useCallback(async (opts?: { soft?: boolean }) => {
     if (opts?.soft) {
@@ -89,16 +102,15 @@ export function DocumentsList() {
     }
   }
 
-  const handleDelete = async (doc: ListedDocument) => {
-    const confirmed = window.confirm(
-      `Delete “${doc.name}”? This removes it from your account and from storage. This cannot be undone.`
-    )
-    if (!confirmed) return
+  const handleConfirmDelete = async () => {
+    if (!docToDelete) return
 
+    const doc = docToDelete
     setDeletingId(doc.id)
     try {
       await deleteDocument(doc.id)
       setDocuments((current) => current.filter((item) => item.id !== doc.id))
+      setDocToDelete(null)
       toast.success(`${doc.name} deleted`)
     } catch (error) {
       const message =
@@ -204,7 +216,7 @@ export function DocumentsList() {
                     variant="destructive"
                     aria-label={`Delete ${doc.name}`}
                     disabled={deletingId === doc.id}
-                    onClick={() => void handleDelete(doc)}
+                    onClick={() => setDocToDelete(doc)}
                   >
                     <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
                   </AttachmentAction>
@@ -214,6 +226,46 @@ export function DocumentsList() {
           ))}
         </ul>
       )}
+
+      <AlertDialog
+        open={docToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deletingId) {
+            setDocToDelete(null)
+          }
+        }}
+      >
+        <AlertDialogContent size="default">
+          <AlertDialogHeader>
+            <AlertDialogMedia className="bg-destructive/10 text-destructive">
+              <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+            </AlertDialogMedia>
+            <AlertDialogTitle>Delete document?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {docToDelete ? (
+                <>
+                  Delete <span className="font-medium text-foreground">{docToDelete.name}</span>?
+                  This removes it from your account and from storage. This
+                  cannot be undone.
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!deletingId}>Cancel</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!!deletingId}
+              onClick={() => {
+                void handleConfirmDelete()
+              }}
+            >
+              {deletingId ? "Deleting…" : "Delete"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

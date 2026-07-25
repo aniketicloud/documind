@@ -160,7 +160,6 @@ export async function createChatWithFirstMessage(options: {
 
   const chatId = crypto.randomUUID()
   const userMessageId = crypto.randomUUID()
-  const assistantMessageId = crypto.randomUUID()
   const now = new Date()
 
   await db.insert(chats).values({
@@ -171,25 +170,13 @@ export async function createChatWithFirstMessage(options: {
     updatedAt: now,
   })
 
-  await db.insert(chatMessages).values([
-    {
-      id: userMessageId,
-      chatId,
-      role: "user",
-      content,
-      createdAt: now,
-    },
-    {
-      id: assistantMessageId,
-      chatId,
-      role: "assistant",
-      content:
-        documentIds.length > 0
-          ? `Got it. I’m using ${documentIds.length === 1 ? "your document" : `${documentIds.length} documents`} for this chat. Full document Q&A is not wired yet — this is a placeholder reply.`
-          : "Got it. Full AI replies are not wired yet — this is a placeholder response so chat history works.",
-      createdAt: new Date(now.getTime() + 1),
-    },
-  ])
+  await db.insert(chatMessages).values({
+    id: userMessageId,
+    chatId,
+    role: "user",
+    content,
+    createdAt: now,
+  })
 
   if (documentIds.length > 0) {
     await db.insert(chatMessageDocuments).values(
@@ -209,6 +196,7 @@ export async function createChatWithFirstMessage(options: {
       updatedAt: now,
     },
     messages,
+    userMessageId,
   }
 }
 
@@ -231,28 +219,15 @@ export async function addMessageToChat(options: {
   await assertOwnedDocumentIds(options.userId, documentIds)
 
   const userMessageId = crypto.randomUUID()
-  const assistantMessageId = crypto.randomUUID()
   const now = new Date()
 
-  await db.insert(chatMessages).values([
-    {
-      id: userMessageId,
-      chatId: chat.id,
-      role: "user",
-      content,
-      createdAt: now,
-    },
-    {
-      id: assistantMessageId,
-      chatId: chat.id,
-      role: "assistant",
-      content:
-        documentIds.length > 0
-          ? `Noted${content ? "" : " the attachment(s)"}. Placeholder assistant reply — model integration comes later.`
-          : "Placeholder assistant reply — model integration comes later.",
-      createdAt: new Date(now.getTime() + 1),
-    },
-  ])
+  await db.insert(chatMessages).values({
+    id: userMessageId,
+    chatId: chat.id,
+    role: "user",
+    content,
+    createdAt: now,
+  })
 
   if (documentIds.length > 0) {
     await db.insert(chatMessageDocuments).values(
@@ -269,7 +244,37 @@ export async function addMessageToChat(options: {
     .where(and(eq(chats.id, chat.id), eq(chats.userId, options.userId)))
 
   const messages = await getChatMessages(chat.id)
-  return { chat: { ...chat, updatedAt: now }, messages }
+  return {
+    chat: { ...chat, updatedAt: now },
+    messages,
+    userMessageId,
+  }
+}
+
+/** Persist streaming assistant reply after generation. */
+export async function saveAssistantMessage(options: {
+  userId: string
+  chatId: string
+  content: string
+}) {
+  const chat = await getOwnedChat(options.userId, options.chatId)
+  if (!chat) return null
+
+  const now = new Date()
+  const id = crypto.randomUUID()
+  await db.insert(chatMessages).values({
+    id,
+    chatId: chat.id,
+    role: "assistant",
+    content: options.content,
+    createdAt: now,
+  })
+  await db
+    .update(chats)
+    .set({ updatedAt: now })
+    .where(and(eq(chats.id, chat.id), eq(chats.userId, options.userId)))
+
+  return { id, chatId: chat.id, content: options.content, createdAt: now }
 }
 
 export async function renameOwnedChat(

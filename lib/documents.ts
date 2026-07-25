@@ -107,7 +107,7 @@ export async function uploadDocument(file: File): Promise<ConfirmedDocument> {
 
 /** Lists documents for the signed-in user only (server enforces ownership). */
 export async function listDocuments(options?: {
-  status?: "pending" | "ready" | "failed"
+  status?: "pending" | "ready" | "processing" | "indexed" | "failed"
 }): Promise<ListedDocument[]> {
   const params = new URLSearchParams()
   if (options?.status) {

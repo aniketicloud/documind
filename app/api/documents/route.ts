@@ -11,7 +11,7 @@ import { requireSession } from "@/lib/session"
  * Lists documents for the authenticated user only.
  *
  * Query:
- * - status: optional filter (pending | ready | failed). Omit for all.
+ * - status: optional filter (pending | ready | processing | indexed | failed). Omit for all.
  */
 export async function GET(request: Request) {
   const session = await requireSession()
@@ -23,10 +23,19 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get("status")?.trim()
 
-    const allowedStatus = new Set(["pending", "ready", "failed"])
+    const allowedStatus = new Set([
+      "pending",
+      "ready",
+      "processing",
+      "indexed",
+      "failed",
+    ])
     if (status && !allowedStatus.has(status)) {
       return NextResponse.json(
-        { error: "Invalid status. Use pending, ready, or failed." },
+        {
+          error:
+            "Invalid status. Use pending, ready, processing, indexed, or failed.",
+        },
         { status: 400 }
       )
     }

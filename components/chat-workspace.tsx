@@ -52,12 +52,21 @@ import {
 } from "@/components/ui/empty"
 import { Spinner } from "@/components/ui/spinner"
 import {
-  createChat,
   getChat,
-  sendChatMessage,
+  listChatModels,
+  streamChatMessage,
+  streamCreateChat,
   type ChatMessageDTO,
+  type ChatModelOption,
   type ChatSummary,
 } from "@/lib/chat-client"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { DOCUMENT_ACCEPT, validateDocumentFile } from "@/lib/document-types"
 import {
   describeFile,
@@ -183,12 +192,19 @@ function ChatMessageRow({ message }: { message: ChatMessageDTO }) {
           </AttachmentGroup>
         ) : null}
 
-        {message.content ? (
+        {message.content || (!isUser && message.content === "") ? (
           <Bubble
             variant={isUser ? "default" : "ghost"}
             align={isUser ? "end" : "start"}
           >
-            <BubbleContent>{message.content}</BubbleContent>
+            <BubbleContent className="whitespace-pre-wrap">
+              {message.content || (
+                <span className="inline-flex items-center gap-2 text-muted-foreground">
+                  <Spinner className="size-3.5" />
+                  Thinking…
+                </span>
+              )}
+            </BubbleContent>
           </Bubble>
         ) : null}
 
@@ -236,14 +252,46 @@ export function ChatWorkspace({
   const [library, setLibrary] = React.useState<ListedDocument[]>([])
   const [libraryLoading, setLibraryLoading] = React.useState(false)
   const [isBusy, setIsBusy] = React.useState(false)
+  const [models, setModels] = React.useState<ChatModelOption[]>([])
+  const [modelId, setModelId] = React.useState<string>("")
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   /** Sync lock — React state alone can't block double-clicks before re-render. */
   const submitLockRef = React.useRef(false)
 
+  React.useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const data = await listChatModels()
+        if (cancelled) return
+        setModels(data.models)
+        const stored =
+          typeof window !== "undefined"
+            ? window.localStorage.getItem("documind:chat-model")
+            : null
+        const preferred =
+          (stored && data.models.some((m) => m.id === stored) && stored) ||
+          data.defaultModelId ||
+          data.models[0]?.id ||
+          ""
+        setModelId(preferred)
+      } catch (error) {
+        if (cancelled) return
+        const message =
+          error instanceof Error ? error.message : "Failed to load models"
+        toast.error(message)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const refreshLibrary = React.useCallback(async () => {
     setLibraryLoading(true)
     try {
-      const rows = await listDocuments({ status: "ready" })
+      // B2: RAG only uses indexed docs — library picker matches that
+      const rows = await listDocuments({ status: "indexed" })
       setLibrary(rows)
     } catch (error) {
       const message =
@@ -406,21 +454,83 @@ export function ChatWorkspace({
     submitLockRef.current = true
     setIsBusy(true)
     const documentIds = readyDocs.map((doc) => doc.documentId as string)
+    const sentText = text || null
+    const sentAttachments = readyDocs.map((doc) => ({
+      id: doc.documentId as string,
+      name: doc.name,
+      contentType: null as string | null,
+      size: doc.size ?? null,
+      status: "ready",
+    }))
 
-    // Clear composer immediately so a second Send has nothing to submit
+    // Optimistic user bubble + streaming assistant
+    const tempUserId = `temp-user-${crypto.randomUUID()}`
+    const tempAssistantId = `temp-assistant-${crypto.randomUUID()}`
+    const now = new Date().toISOString()
+
     if (mode === "new") {
       setInput("")
       setAttachments([])
+      setMessages([
+        {
+          id: tempUserId,
+          role: "user",
+          content: sentText,
+          createdAt: now,
+          attachments: sentAttachments,
+        },
+        {
+          id: tempAssistantId,
+          role: "assistant",
+          content: "",
+          createdAt: now,
+          attachments: [],
+        },
+      ])
+    } else {
+      setInput("")
+      setAttachments([])
+      setMessages((current) => [
+        ...current,
+        {
+          id: tempUserId,
+          role: "user",
+          content: sentText,
+          createdAt: now,
+          attachments: sentAttachments,
+        },
+        {
+          id: tempAssistantId,
+          role: "assistant",
+          content: "",
+          createdAt: now,
+          attachments: [],
+        },
+      ])
+    }
+
+    const appendToken = (token: string) => {
+      setMessages((current) =>
+        current.map((msg) =>
+          msg.id === tempAssistantId
+            ? { ...msg, content: (msg.content || "") + token }
+            : msg
+        )
+      )
     }
 
     try {
       if (mode === "new") {
-        const result = await createChat({
-          content: text || undefined,
-          documentIds,
-        })
+        const result = await streamCreateChat(
+          {
+            content: text || undefined,
+            documentIds,
+            modelId: modelId || undefined,
+          },
+          appendToken
+        )
         notifyChatsChanged()
-        router.push(`/c/${result.chat.id}`)
+        router.push(`/c/${result.chatId}`)
         // Keep busy/locked until this page unmounts after navigation
         return
       }
@@ -431,14 +541,20 @@ export function ChatWorkspace({
         return
       }
 
-      const result = await sendChatMessage(chatId, {
-        content: text || undefined,
-        documentIds,
-      })
-      setChat(result.chat)
-      setMessages(result.messages)
-      setInput("")
-      setAttachments([])
+      await streamChatMessage(
+        chatId,
+        {
+          content: text || undefined,
+          documentIds,
+          modelId: modelId || undefined,
+        },
+        appendToken
+      )
+
+      // Reload canonical messages (real IDs from DB)
+      const data = await getChat(chatId)
+      setChat(data.chat)
+      setMessages(data.messages)
       notifyChatsChanged()
       submitLockRef.current = false
       setIsBusy(false)
@@ -446,6 +562,20 @@ export function ChatWorkspace({
       const message =
         error instanceof Error ? error.message : "Failed to send message"
       toast.error(message)
+      // Drop optimistic bubbles on failure for existing chats; keep error text if partial
+      if (mode === "chat" && chatId) {
+        try {
+          const data = await getChat(chatId)
+          setChat(data.chat)
+          setMessages(data.messages)
+        } catch {
+          setMessages((current) =>
+            current.filter(
+              (m) => m.id !== tempUserId && m.id !== tempAssistantId
+            )
+          )
+        }
+      }
       submitLockRef.current = false
       setIsBusy(false)
     }
@@ -484,7 +614,7 @@ export function ChatWorkspace({
           <MessageScrollerProvider autoScroll defaultScrollPosition="end">
             <MessageScroller className="min-h-0 flex-1">
               <MessageScrollerViewport aria-label="Chat messages">
-                {mode === "new" || messages.length === 0 ? (
+                {messages.length === 0 ? (
                   <EmptyState />
                 ) : (
                   <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-5 px-4 py-6">
@@ -509,7 +639,7 @@ export function ChatWorkspace({
 
           <div className="border-t bg-background p-4">
             <div className="mx-auto w-full max-w-3xl space-y-3">
-              {mode === "new" ? (
+              {mode === "new" && messages.length === 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {SUGGESTIONS.map((suggestion) => (
                     <Bubble key={suggestion} variant="outline" align="start">
@@ -576,8 +706,8 @@ export function ChatWorkspace({
                   rows={1}
                   disabled={isBusy}
                   placeholder={
-                    isBusy && mode === "new"
-                      ? "Creating chat…"
+                    isBusy
+                      ? "Generating answer…"
                       : attachments.length > 0
                         ? "Ask about the selected document(s)..."
                         : "Message Documind..."
@@ -588,7 +718,7 @@ export function ChatWorkspace({
                 />
 
                 <div className="flex items-center justify-between gap-2 px-1 pb-1">
-                  <div className="flex items-center gap-1">
+                  <div className="flex min-w-0 flex-1 items-center gap-1">
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -629,7 +759,7 @@ export function ChatWorkspace({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start" className="w-72">
                         <DropdownMenuLabel>
-                          Your uploaded files
+                          Indexed documents (RAG)
                         </DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         {libraryLoading ? (
@@ -641,11 +771,12 @@ export function ChatWorkspace({
                           <Empty className="border-0 p-3">
                             <EmptyHeader>
                               <EmptyTitle className="text-xs">
-                                No documents yet
+                                No indexed documents
                               </EmptyTitle>
                               <EmptyDescription className="text-xs">
-                                Upload a PDF, Word, Excel, or text file to use
-                                it here.
+                                Upload a .txt, .md, or .csv in My documents,
+                                confirm ingest, and wait until status is
+                                indexed. Run npm run worker:ingest.
                               </EmptyDescription>
                             </EmptyHeader>
                           </Empty>
@@ -665,7 +796,7 @@ export function ChatWorkspace({
                                   {doc.name}
                                 </span>
                                 <span className="text-xs text-muted-foreground">
-                                  {describeFile(doc.name, doc.size)}
+                                  {describeFile(doc.name, doc.size)} · indexed
                                 </span>
                               </span>
                             </DropdownMenuCheckboxItem>
@@ -673,6 +804,44 @@ export function ChatWorkspace({
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>
+
+                    {models.length > 0 ? (
+                      <Select
+                        value={modelId}
+                        onValueChange={(value) => {
+                          setModelId(value)
+                          try {
+                            window.localStorage.setItem(
+                              "documind:chat-model",
+                              value
+                            )
+                          } catch {
+                            // ignore
+                          }
+                        }}
+                        disabled={isBusy}
+                      >
+                        <SelectTrigger
+                          size="sm"
+                          className="h-8 w-[min(11.5rem,40vw)] border-0 bg-transparent shadow-none"
+                          aria-label="Chat model"
+                        >
+                          <SelectValue placeholder="Model" />
+                        </SelectTrigger>
+                        <SelectContent align="start">
+                          {models.map((model) => (
+                            <SelectItem key={model.id} value={model.id}>
+                              <span className="flex flex-col items-start gap-0.5">
+                                <span>{model.label}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {model.description}
+                                </span>
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : null}
                   </div>
 
                   <Button
@@ -698,8 +867,8 @@ export function ChatWorkspace({
               </div>
               <p className="text-center text-xs text-muted-foreground">
                 {mode === "new"
-                  ? "Send a message or file to create a chat in Recent."
-                  : "Files upload immediately. AI answers are placeholders for now."}
+                  ? "Pick a model, send a message, or attach indexed docs for RAG."
+                  : "Streaming chat; RAG uses only indexed documents attached on this turn."}
               </p>
             </div>
           </div>

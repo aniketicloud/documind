@@ -45,7 +45,87 @@ export async function createChat(input: {
   return (await res.json()) as {
     chat: ChatSummary
     messages: ChatMessageDTO[]
+    userMessageId?: string
   }
+}
+
+export type ChatModelOption = {
+  id: string
+  label: string
+  provider: string
+  description: string
+}
+
+export async function listChatModels() {
+  const res = await fetch("/api/models", { cache: "no-store" })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { error?: string } | null
+    throw new Error(data?.error ?? "Failed to load models")
+  }
+  return (await res.json()) as {
+    models: ChatModelOption[]
+    defaultModelId: string | null
+  }
+}
+
+/** Create chat + stream assistant (B2/B3). Returns final text and new chat id. */
+export async function streamCreateChat(
+  input: { content?: string; documentIds?: string[]; modelId?: string },
+  onToken: (token: string) => void
+) {
+  const res = await fetch("/api/chats/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { error?: string } | null
+    throw new Error(data?.error ?? "Failed to start chat stream")
+  }
+  const chatId = res.headers.get("X-Chat-Id")
+  if (!chatId) throw new Error("Missing chat id from stream")
+
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error("No stream body")
+  const decoder = new TextDecoder()
+  let full = ""
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    const chunk = decoder.decode(value, { stream: true })
+    full += chunk
+    onToken(chunk)
+  }
+  return { chatId, content: full }
+}
+
+/** Append user message + stream assistant on existing chat. */
+export async function streamChatMessage(
+  chatId: string,
+  input: { content?: string; documentIds?: string[]; modelId?: string },
+  onToken: (token: string) => void
+) {
+  const res = await fetch(`/api/chats/${chatId}/messages/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { error?: string } | null
+    throw new Error(data?.error ?? "Failed to stream message")
+  }
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error("No stream body")
+  const decoder = new TextDecoder()
+  let full = ""
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    const chunk = decoder.decode(value, { stream: true })
+    full += chunk
+    onToken(chunk)
+  }
+  return { content: full }
 }
 
 export async function getChat(chatId: string) {

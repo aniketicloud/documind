@@ -191,9 +191,9 @@ async function tryClaimJob(jobId: string, workerId: string) {
 }
 
 /**
- * Option A processing: verify object is readable from storage.
- * For .txt/.md, also count UTF-8 bytes as a light content check.
- * Full parse/embed is Option B+.
+ * Ingest: download object → extract text (txt/md/csv) → chunk → embed → Qdrant.
+ * Binary office/PDF without extractors still mark indexed for storage, but with a note
+ * that RAG has no chunks (Option F will add parsers).
  */
 export async function processIngestJob(job: typeof documentJobs.$inferSelect) {
   const [doc] = await db
@@ -218,35 +218,81 @@ export async function processIngestJob(job: typeof documentJobs.$inferSelect) {
     return { ok: false as const, reason: "missing_object" }
   }
 
-  // Download proves server can read the object (worker credentials)
   const object = await getObjectBytes(doc.key)
   if (!object.body.length) {
     await failJob(job.id, job.documentId, "Object body is empty")
     return { ok: false as const, reason: "empty_object" }
   }
 
-  // Light content probe for plain text (optional signal for later RAG)
-  const lower = doc.name.toLowerCase()
-  if (
-    lower.endsWith(".txt") ||
-    lower.endsWith(".md") ||
-    lower.endsWith(".markdown") ||
-    lower.endsWith(".csv")
-  ) {
-    const sample = object.body.subarray(0, Math.min(object.body.length, 64 * 1024))
-    const text = sample.toString("utf8")
-    if (!text.trim()) {
-      await failJob(job.id, job.documentId, "Text document appears empty")
-      return { ok: false as const, reason: "empty_text" }
+  // Dynamic import keeps worker resilient if AI libs misconfigure
+  const { extractPlainText, chunkText } = await import("@/lib/text-extract")
+  const extracted = extractPlainText(doc.name, object.body)
+
+  let chunkCount = 0
+
+  if (extracted.text) {
+    try {
+      const { embedTexts } = await import("@/lib/gemini")
+      const {
+        deleteDocumentChunks,
+        upsertDocumentChunks,
+        chunkPointId,
+      } = await import("@/lib/qdrant")
+
+      const chunks = chunkText(extracted.text)
+      if (chunks.length === 0) {
+        await failJob(job.id, job.documentId, "No text chunks produced")
+        return { ok: false as const, reason: "no_chunks" }
+      }
+
+      await deleteDocumentChunks(doc.id)
+      const vectors = await embedTexts(chunks, { title: doc.name })
+      const points = chunks.map((text, chunkIndex) => ({
+        id: chunkPointId(doc.id, chunkIndex),
+        vector: vectors[chunkIndex]!,
+        payload: {
+          userId: doc.userId,
+          documentId: doc.id,
+          documentName: doc.name,
+          chunkIndex,
+          text,
+        },
+      }))
+      await upsertDocumentChunks(points)
+      chunkCount = chunks.length
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Embedding/Qdrant failed"
+      await failJob(job.id, job.documentId, message)
+      return { ok: false as const, reason: "embed_failed" }
+    }
+  } else if (extracted.text === null && extracted.method === "utf8") {
+    await failJob(job.id, job.documentId, extracted.reason)
+    return { ok: false as const, reason: "empty_text" }
+  } else {
+    // Unsupported type for text RAG: still mark indexed for storage lifecycle,
+    // but clear any old vectors and leave a soft note in errorMessage (null for clean UX)
+    try {
+      const { deleteDocumentChunks } = await import("@/lib/qdrant")
+      await deleteDocumentChunks(doc.id)
+    } catch {
+      // Qdrant optional if down — still index as storage-ok
     }
   }
 
   const now = new Date()
+  const note =
+    chunkCount > 0
+      ? null
+      : extracted.text === null && "reason" in extracted
+        ? extracted.reason
+        : null
+
   await db
     .update(documents)
     .set({
       status: "indexed",
-      errorMessage: null,
+      errorMessage: note,
       processedAt: now,
       size: head.size ?? doc.size ?? object.body.length,
       contentType: head.contentType ?? doc.contentType,
@@ -270,6 +316,7 @@ export async function processIngestJob(job: typeof documentJobs.$inferSelect) {
     ok: true as const,
     documentId: doc.id,
     bytes: object.body.length,
+    chunks: chunkCount,
   }
 }
 

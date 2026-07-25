@@ -30,6 +30,9 @@ export function toPublicDocument(doc: DocumentRow) {
     contentType: doc.contentType,
     size: doc.size,
     status: doc.status,
+    errorMessage: doc.errorMessage,
+    processedAt: doc.processedAt,
+    ingestAttempts: doc.ingestAttempts,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   }

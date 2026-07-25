@@ -8,6 +8,7 @@ import {
   isKeyOwnedByUser,
   toPublicDocument,
 } from "@/lib/documents-access"
+import { enqueueDocumentIngest } from "@/lib/ingest"
 import { objectExists } from "@/lib/s3"
 import { requireSession } from "@/lib/session"
 
@@ -35,7 +36,6 @@ export async function POST(request: Request) {
 
   try {
     const userId = session.user.id
-    // Owner-only: other users get the same 404 as a missing id
     const doc = await getOwnedDocument(userId, documentId)
 
     if (!doc) {
@@ -43,11 +43,24 @@ export async function POST(request: Request) {
     }
 
     if (!isKeyOwnedByUser(doc.key, userId)) {
-      // Defense in depth if data was ever corrupted
       return NextResponse.json({ error: "Document not found" }, { status: 404 })
     }
 
-    if (doc.status === "ready") {
+    // Already past storage confirm — still ensure ingest is queued when needed
+    if (
+      doc.status === "ready" ||
+      doc.status === "processing" ||
+      doc.status === "indexed"
+    ) {
+      if (doc.status === "ready") {
+        const { document } = await enqueueDocumentIngest({
+          documentId: doc.id,
+          userId,
+        })
+        return NextResponse.json({
+          document: toPublicDocument(document),
+        })
+      }
       return NextResponse.json({ document: toPublicDocument(doc) })
     }
 
@@ -55,7 +68,10 @@ export async function POST(request: Request) {
     if (!head.exists) {
       await db
         .update(documents)
-        .set({ status: "failed" })
+        .set({
+          status: "failed",
+          errorMessage: "Object not found in storage. Upload may have failed.",
+        })
         .where(and(eq(documents.id, doc.id), eq(documents.userId, userId)))
 
       return NextResponse.json(
@@ -70,11 +86,20 @@ export async function POST(request: Request) {
         status: "ready",
         contentType: head.contentType ?? doc.contentType,
         size: head.size ?? doc.size,
+        errorMessage: null,
       })
       .where(and(eq(documents.id, doc.id), eq(documents.userId, userId)))
       .returning()
 
-    return NextResponse.json({ document: toPublicDocument(updated) })
+    // Option A: enqueue async ingest (does not block upload UX long)
+    const { document: afterIngest } = await enqueueDocumentIngest({
+      documentId: updated.id,
+      userId,
+    })
+
+    return NextResponse.json({
+      document: toPublicDocument(afterIngest),
+    })
   } catch (error) {
     console.error("[documents/confirm]", error)
     return NextResponse.json(

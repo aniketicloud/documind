@@ -151,6 +151,33 @@ export async function objectExists(key: string) {
   }
 }
 
+/** Download object bytes for workers (server-side credentials). */
+export async function getObjectBytes(key: string): Promise<{
+  body: Buffer
+  contentType?: string
+  contentLength?: number
+}> {
+  const s3 = getS3Client()
+  const bucket = getS3Bucket()
+  const result = await s3.send(
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    })
+  )
+
+  if (!result.Body) {
+    throw new Error("Empty object body")
+  }
+
+  const bytes = await result.Body.transformToByteArray()
+  return {
+    body: Buffer.from(bytes),
+    contentType: result.ContentType,
+    contentLength: result.ContentLength,
+  }
+}
+
 /** Delete object from RustFS. Missing objects are treated as success. */
 export async function deleteObject(key: string) {
   const s3 = getS3Client()

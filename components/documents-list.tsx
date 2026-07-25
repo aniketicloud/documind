@@ -44,6 +44,7 @@ import {
   describeFile,
   getDocumentDownloadUrl,
   listDocuments,
+  reprocessDocument,
   uploadDocument,
   type ListedDocument,
 } from "@/lib/documents"
@@ -59,9 +60,20 @@ import {
 function statusVariant(
   status: string
 ): "default" | "secondary" | "outline" | "destructive" {
-  if (status === "ready") return "default"
+  if (status === "indexed") return "default"
   if (status === "failed") return "destructive"
+  if (status === "processing") return "secondary"
+  if (status === "ready") return "outline"
   return "secondary"
+}
+
+function attachmentState(
+  status: string
+): "idle" | "uploading" | "processing" | "error" | "done" {
+  if (status === "failed") return "error"
+  if (status === "processing" || status === "pending") return "processing"
+  if (status === "indexed" || status === "ready") return "done"
+  return "idle"
 }
 
 export function DocumentsList() {
@@ -71,6 +83,9 @@ export function DocumentsList() {
   const [uploading, setUploading] = React.useState(false)
   const [downloadingId, setDownloadingId] = React.useState<string | null>(null)
   const [deletingId, setDeletingId] = React.useState<string | null>(null)
+  const [reprocessingId, setReprocessingId] = React.useState<string | null>(
+    null
+  )
   const [docToDelete, setDocToDelete] = React.useState<ListedDocument | null>(
     null
   )
@@ -99,6 +114,18 @@ export function DocumentsList() {
   React.useEffect(() => {
     void load()
   }, [load])
+
+  // Poll while any document is processing so badges update after worker finishes
+  React.useEffect(() => {
+    const busy = documents.some(
+      (doc) => doc.status === "processing" || doc.status === "ready"
+    )
+    if (!busy) return
+    const id = window.setInterval(() => {
+      void load({ soft: true })
+    }, 3000)
+    return () => window.clearInterval(id)
+  }, [documents, load])
 
   const handleUploadFiles = async (fileList: FileList | null) => {
     if (!fileList?.length) return
@@ -174,6 +201,23 @@ export function DocumentsList() {
     }
   }
 
+  const handleReprocess = async (doc: ListedDocument) => {
+    setReprocessingId(doc.id)
+    try {
+      const { document } = await reprocessDocument(doc.id)
+      setDocuments((current) =>
+        current.map((item) => (item.id === document.id ? document : item))
+      )
+      toast.success(`Reprocessing ${doc.name}`)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to reprocess"
+      toast.error(message)
+    } finally {
+      setReprocessingId(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
@@ -241,7 +285,9 @@ export function DocumentsList() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Allowed types: {DOCUMENT_EXTENSIONS.join(", ")} · max 50MB
+        Allowed types: {DOCUMENT_EXTENSIONS.join(", ")} · max 50MB · statuses:
+        pending → ready → processing → indexed (run{" "}
+        <code className="rounded bg-muted px-1">npm run worker:ingest</code>)
       </p>
 
       {documents.length === 0 ? (
@@ -279,13 +325,7 @@ export function DocumentsList() {
           {documents.map((doc) => (
             <li key={doc.id}>
               <Attachment
-                state={
-                  doc.status === "ready"
-                    ? "done"
-                    : doc.status === "failed"
-                      ? "error"
-                      : "processing"
-                }
+                state={attachmentState(doc.status)}
                 size="default"
                 className="w-full max-w-none"
               >
@@ -298,16 +338,35 @@ export function DocumentsList() {
                     {describeFile(doc.name, doc.size)}
                     {" · "}
                     {new Date(doc.createdAt).toLocaleString()}
+                    {doc.errorMessage ? ` · ${doc.errorMessage}` : ""}
                   </AttachmentDescription>
                 </AttachmentContent>
                 <AttachmentActions className="gap-2 pr-2">
                   <Badge variant={statusVariant(doc.status)}>{doc.status}</Badge>
+                  {(doc.status === "failed" || doc.status === "indexed") && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        reprocessingId === doc.id || deletingId === doc.id
+                      }
+                      onClick={() => void handleReprocess(doc)}
+                    >
+                      {reprocessingId === doc.id ? (
+                        <Spinner data-icon="inline-start" />
+                      ) : null}
+                      Retry ingest
+                    </Button>
+                  )}
                   <AttachmentAction
                     type="button"
                     size="icon-sm"
                     aria-label={`Download ${doc.name}`}
                     disabled={
-                      doc.status !== "ready" ||
+                      (doc.status !== "ready" &&
+                        doc.status !== "indexed" &&
+                        doc.status !== "processing") ||
                       downloadingId === doc.id ||
                       deletingId === doc.id
                     }

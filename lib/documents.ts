@@ -15,6 +15,9 @@ export type ConfirmedDocument = {
   contentType: string | null
   size: number | null
   status: string
+  errorMessage?: string | null
+  processedAt?: string | Date | null
+  ingestAttempts?: number | null
   createdAt: string | Date
   updatedAt?: string | Date
 }
@@ -167,4 +170,23 @@ export async function deleteDocument(documentId: string) {
   }
 
   return (await res.json()) as { ok: true; id: string }
+}
+
+/** Re-queue document ingest (owner only). */
+export async function reprocessDocument(documentId: string) {
+  const res = await fetch(`/api/documents/${documentId}/reprocess`, {
+    method: "POST",
+  })
+
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as {
+      error?: string
+    } | null
+    throw new Error(data?.error ?? "Failed to reprocess document")
+  }
+
+  return (await res.json()) as {
+    document: ConfirmedDocument
+    jobId: string | null
+  }
 }

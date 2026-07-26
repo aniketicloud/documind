@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+documind-docs
+*.md
+.env*.local
+.turbo
+coverage
+dist
+.DS_Store

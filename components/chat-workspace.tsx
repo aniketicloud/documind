@@ -955,9 +955,9 @@ export function ChatWorkspace({
                                 No indexed documents
                               </EmptyTitle>
                               <EmptyDescription className="text-xs">
-                                Upload a .txt, .md, or .csv in My documents,
-                                confirm ingest, and wait until status is
-                                indexed. Run npm run worker:ingest.
+                                Upload a .txt, .md, .csv, or text-based PDF in
+                                My documents and wait until status is indexed
+                                (docker compose must be running).
                               </EmptyDescription>
                             </EmptyHeader>
                           </Empty>
@@ -1008,8 +1008,8 @@ export function ChatWorkspace({
                         <SelectTrigger
                           size="sm"
                           className={cn(
-                            "h-8 w-[9.5rem] max-w-[9.5rem] min-w-0 shrink-0 gap-1 overflow-hidden border-0 bg-muted/50 px-2 shadow-none dark:bg-muted/30",
-                            "[&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left"
+                            "h-8 w-38 max-w-38 min-w-0 shrink-0 gap-1 overflow-hidden border-0 bg-muted/50 px-2 shadow-none dark:bg-muted/30",
+                            "**:data-[slot=select-value]:min-w-0 **:data-[slot=select-value]:flex-1 **:data-[slot=select-value]:truncate **:data-[slot=select-value]:text-left"
                           )}
                           aria-label="Chat model"
                         >
@@ -1018,7 +1018,7 @@ export function ChatWorkspace({
                         <SelectContent
                           align="end"
                           position="popper"
-                          className="min-w-[12rem] max-w-[16rem]"
+                          className="min-w-48 max-w-64"
                         >
                           {models.map((model) => (
                             <SelectItem

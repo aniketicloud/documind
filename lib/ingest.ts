@@ -225,8 +225,8 @@ export async function processIngestJob(job: typeof documentJobs.$inferSelect) {
   }
 
   // Dynamic import keeps worker resilient if AI libs misconfigure
-  const { extractPlainText, chunkText } = await import("@/lib/text-extract")
-  const extracted = extractPlainText(doc.name, object.body)
+  const { extractDocumentText, chunkText } = await import("@/lib/text-extract")
+  const extracted = await extractDocumentText(doc.name, object.body)
 
   let chunkCount = 0
 
@@ -266,12 +266,23 @@ export async function processIngestJob(job: typeof documentJobs.$inferSelect) {
       await failJob(job.id, job.documentId, message)
       return { ok: false as const, reason: "embed_failed" }
     }
-  } else if (extracted.text === null && extracted.method === "utf8") {
-    await failJob(job.id, job.documentId, extracted.reason)
+  } else if (
+    extracted.text === null &&
+    (extracted.method === "utf8" ||
+      extracted.method === "pymupdf" ||
+      extracted.method === "pdf_service" ||
+      extracted.method === "pdf")
+  ) {
+    // Empty text / PDF extract failure → failed (user can reprocess after OCR lands)
+    await failJob(
+      job.id,
+      job.documentId,
+      extracted.reason || "No extractable text"
+    )
     return { ok: false as const, reason: "empty_text" }
   } else {
     // Unsupported type for text RAG: still mark indexed for storage lifecycle,
-    // but clear any old vectors and leave a soft note in errorMessage (null for clean UX)
+    // but clear any old vectors and leave a soft note in errorMessage
     try {
       const { deleteDocumentChunks } = await import("@/lib/qdrant")
       await deleteDocumentChunks(doc.id)

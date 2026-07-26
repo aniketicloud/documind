@@ -1,12 +1,19 @@
 /**
- * Extract plain text from allowed simple formats (B2).
- * PDF/DOCX/XLSX return null → document can still be "indexed" for storage
- * but RAG will note no searchable text until Option F parsers land.
+ * Extract plain text from allowed formats.
+ * - txt/md/csv/rtf: in-process UTF-8
+ * - pdf: Python pdf-extract service (PyMuPDF); OCR later via same API
  */
+
+import { extractPdfText } from "@/lib/pdf-extract-client"
+
+export type ExtractResult =
+  | { text: string; method: string }
+  | { text: null; method: string; reason: string }
+
 export function extractPlainText(
   filename: string,
   body: Buffer
-): { text: string; method: string } | { text: null; method: string; reason: string } {
+): ExtractResult {
   const lower = filename.toLowerCase()
 
   if (
@@ -16,7 +23,6 @@ export function extractPlainText(
     lower.endsWith(".csv") ||
     lower.endsWith(".rtf")
   ) {
-    // Strip basic RTF control words if needed later; for now UTF-8
     let text = body.toString("utf8")
     if (lower.endsWith(".rtf")) {
       text = text
@@ -29,7 +35,6 @@ export function extractPlainText(
     if (!text) {
       return { text: null, method: "utf8", reason: "empty_text" }
     }
-    // Cap very large files for free-tier embeddings
     const maxChars = Number(process.env.INGEST_MAX_CHARS || 500_000)
     if (text.length > maxChars) {
       text = text.slice(0, maxChars)
@@ -37,11 +42,53 @@ export function extractPlainText(
     return { text, method: "utf8" }
   }
 
+  if (lower.endsWith(".pdf")) {
+    // Sync API cannot call Python — use extractDocumentText()
+    return {
+      text: null,
+      method: "pdf",
+      reason: "Use extractDocumentText for PDF (async service call)",
+    }
+  }
+
   return {
     text: null,
     method: "unsupported",
-    reason: "Text extraction for this type is not enabled yet (use .txt, .md, or .csv for RAG)",
+    reason:
+      "Text extraction for this type is not enabled yet (use .txt, .md, .csv, or .pdf)",
   }
+}
+
+/**
+ * Async extract: handles PDF via Docker pdf-extract service.
+ */
+export async function extractDocumentText(
+  filename: string,
+  body: Buffer
+): Promise<ExtractResult> {
+  const lower = filename.toLowerCase()
+
+  if (lower.endsWith(".pdf")) {
+    try {
+      const result = await extractPdfText(body, { ocr: "off" })
+      if (result.text) {
+        return { text: result.text, method: result.method || "pymupdf" }
+      }
+      return {
+        text: null,
+        method: result.method || "pymupdf",
+        reason:
+          result.reason ||
+          "No extractable text (scanned/image PDF?). OCR is not enabled yet.",
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "PDF extract failed"
+      return { text: null, method: "pdf_service", reason: message }
+    }
+  }
+
+  return extractPlainText(filename, body)
 }
 
 /** Split text into overlapping chunks for embedding. */
@@ -60,7 +107,6 @@ export function chunkText(
   let start = 0
   while (start < cleaned.length) {
     let end = Math.min(start + chunkSize, cleaned.length)
-    // Prefer break on paragraph/newline
     if (end < cleaned.length) {
       const slice = cleaned.slice(start, end)
       const lastBreak = Math.max(

@@ -10,11 +10,16 @@ services:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-documind} -d ${POSTGRES_DB:-documind}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: dhi.io/redis:8.8
     restart: always
-    # protected-mode no: host apps reach Redis via Docker port publish (not loopback from Redis's view)
+    # protected-mode no: host apps reach Redis via Docker port publish
     command: redis-server --appendonly yes --protected-mode no
     ports:
       - "6379:6379"
@@ -38,7 +43,6 @@ services:
     restart: unless-stopped
 
   # S3-compatible object storage (RustFS) — API :9000, console :9001
-  # Default credentials: rustfsadmin / rustfsadmin
   rustfs:
     image: rustfs/rustfs:latest
     container_name: documind-rustfs
@@ -68,6 +72,66 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  # PDF text extract (F1: PyMuPDF native text; OCR later same service)
+  pdf-extract:
+    build:
+      context: ./services/pdf-extract
+      dockerfile: Dockerfile
+    container_name: documind-pdf-extract
+    hostname: pdf-extract
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      PDF_MIN_USEFUL_CHARS: ${PDF_MIN_USEFUL_CHARS:-40}
+      PDF_MAX_PAGES: ${PDF_MAX_PAGES:-200}
+      PDF_MAX_CHARS: ${PDF_MAX_CHARS:-500000}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Ingest worker (claim Redis/Postgres jobs → extract → embed → Qdrant)
+  # Uses Docker-internal hostnames; host Next.js still uses localhost ports in .env
+  ingest-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: documind-ingest-worker
+    hostname: ingest-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override host-oriented .env values for in-network access
+      DATABASE_URL: postgresql://${POSTGRES_USER:-documind}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-documind}
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://rustfs:9000
+      QDRANT_URL: http://qdrant:6333
+      PDF_EXTRACT_URL: http://pdf-extract:8090
+      INGEST_WORKER_ID: ${INGEST_WORKER_ID:-docker-worker-1}
+      INGEST_POLL_MS: ${INGEST_POLL_MS:-1500}
+      # GEMINI_API_KEY, QDRANT_COLLECTION, S3_* keys come from env_file
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rustfs:
+        condition: service_started
+      qdrant:
+        condition: service_started
+      pdf-extract:
+        condition: service_healthy
 
 volumes:
   pgdata:

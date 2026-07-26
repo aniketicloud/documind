@@ -1,10 +1,14 @@
 /**
- * Document ingest worker (Option A).
+ * Document ingest worker.
  *
- * Usage:
- *   npm run worker:ingest
+ * Production / daily local use: Docker Compose service `ingest-worker`
+ *   docker compose up -d
  *
- * Requires: DATABASE_URL, S3_*, REDIS_URL (optional but recommended)
+ * Optional host debug only (stop compose worker first):
+ *   docker compose stop ingest-worker && npm run worker:ingest
+ *
+ * Requires: DATABASE_URL, S3_*, REDIS_URL, QDRANT_URL, GEMINI_API_KEY
+ * PDF: PDF_EXTRACT_URL (pdf-extract service)
  */
 import { config } from "dotenv"
 import { resolve } from "node:path"

@@ -132,7 +132,7 @@ export async function* streamRagAnswer(options: {
   })
 
   if (note === "none_indexed") {
-    yield "I can only answer from **indexed** documents. The attached file(s) are not indexed yet (still processing, failed, or not text-extractable for RAG). Open **My documents**, wait for status `indexed`, or use a `.txt` / `.md` / `.csv` file and ensure `npm run worker:ingest` is running. You can still chat without attachments, or switch model in the composer if one provider is rate-limited."
+    yield "I can only answer from **indexed** documents. The attached file(s) are not indexed yet (still processing, failed, or not text-extractable for RAG). Open **My documents**, wait for status `indexed`, and use a `.txt` / `.md` / `.csv` or a **text-based PDF**. Ensure `docker compose up -d` is running (includes the ingest worker and PDF extract service). You can still chat without attachments, or switch model in the composer if one provider is rate-limited."
     return
   }
 

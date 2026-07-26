@@ -1,6 +1,6 @@
 # Documind
 
-Document intelligence app: multi-chat, document upload to S3-compatible storage (RustFS), owner-scoped files, Better Auth, and local Docker infrastructure (Postgres, Redis, RustFS, Qdrant).
+Document intelligence app: multi-chat, document upload to S3-compatible storage (RustFS), owner-scoped files, Better Auth, RAG over text files and **text-based PDFs**, and local Docker infrastructure.
 
 ## Documentation
 
@@ -13,21 +13,19 @@ Full docs live in a **separate** Fumadocs site:
 
 ```bash
 cp example.env .env
+# set GEMINI_API_KEY (and optional ZAI_API_KEY) in .env
 docker compose up -d
+# starts Postgres, Redis, Qdrant, RustFS, pdf-extract, ingest-worker
 npm install
 npm run db:push
 npm run dev
-# separate terminal — document ingest worker (Option A)
-npm run worker:ingest
 ```
 
 App: [http://localhost:3000](http://localhost:3000)
 
-Without `worker:ingest`, uploads still work but documents stay `processing` until a worker runs.
+Only **one** app terminal is required. Document ingest and PDF text extraction run inside Compose (`ingest-worker`, `pdf-extract`).
 
-**What is ingest / why the worker?**  
-See docs: [Document ingest (Option A)](../documind-docs/content/docs/guide/document-ingest.mdx)  
-(or run docs site → Guide → Document ingest).
+**Ingest / PDF / embeddings:** see docs Guide → Document ingest, PDF extract, Embeddings & Qdrant.
 
 | Port | Service |
 |------|---------|
@@ -36,16 +34,29 @@ See docs: [Document ingest (Option A)](../documind-docs/content/docs/guide/docum
 | 6379 | Redis |
 | 9000 / 9001 | RustFS API / console |
 | 6335 | Qdrant |
+| 8090 | PDF extract (PyMuPDF) |
 
 Default RustFS credentials: `rustfsadmin` / `rustfsadmin`.
+
+## What works for chat (RAG)
+
+| Format | Notes |
+|--------|--------|
+| `.txt`, `.md`, `.csv` | Extracted in the Node worker |
+| **Text-based PDF** | Extracted via Docker `pdf-extract` (PyMuPDF) |
+| Scanned / image PDF | `failed` until OCR (F1b) |
+| DOCX / XLSX (binary) | Storage OK; full text extract later |
+
+Pin **indexed** docs to a chat, then ask questions.
 
 ## Stack
 
 - Next.js 16 (App Router), React 19, Tailwind 4, shadcn/ui  
 - Better Auth + Drizzle + Postgres  
 - RustFS (S3) presigned uploads  
-- Redis (demo + future jobs)  
-- Qdrant (provisioned for future RAG)  
+- Redis job queue + Docker ingest worker  
+- Qdrant vectors + Gemini embeddings  
+- Streaming chat (Z.AI / Gemini Interactions)  
 
 ## License
 

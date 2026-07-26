@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import {
   deleteOwnedChat,
   getChatMessages,
+  getChatScopedDocuments,
   getOwnedChat,
   renameOwnedChat,
 } from "@/lib/chats"
@@ -31,7 +32,10 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: "Chat not found" }, { status: 404 })
     }
 
-    const messages = await getChatMessages(chat.id)
+    const [messages, scopedDocuments] = await Promise.all([
+      getChatMessages(chat.id),
+      getChatScopedDocuments(session.user.id, chat.id),
+    ])
     return NextResponse.json({
       chat: {
         id: chat.id,
@@ -40,6 +44,7 @@ export async function GET(_request: Request, context: RouteContext) {
         updatedAt: chat.updatedAt,
       },
       messages,
+      scopedDocuments,
     })
   } catch (error) {
     console.error("[chats/:id GET]", error)

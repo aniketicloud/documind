@@ -40,6 +40,10 @@ export async function POST(request: Request) {
       documentIds,
     })
 
+    // RAG uses chat-scoped docs (pinned on create when documentIds provided)
+    const ragDocumentIds =
+      created.scopedDocuments?.map((d) => d.id) ?? documentIds
+
     const query =
       content ||
       "Summarize the main points of the attached document(s)."
@@ -52,7 +56,7 @@ export async function POST(request: Request) {
         try {
           for await (const token of streamRagAnswer({
             userId: session.user.id,
-            documentIds,
+            documentIds: ragDocumentIds,
             query,
             modelId,
           })) {

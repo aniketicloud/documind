@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import {
   addMessageToChat,
+  getChatScopedDocuments,
   getOwnedChat,
   saveAssistantMessage,
 } from "@/lib/chats"
@@ -14,9 +15,8 @@ type RouteContext = {
 
 /**
  * POST /api/chats/:id/messages/stream
- * Body: { content?: string, documentIds?: string[] }
- * Streams text/plain tokens, then client can refresh messages.
- * Saves the full assistant message when the stream completes.
+ * Body: { content?: string, documentIds?: string[], modelId?: string }
+ * RAG uses chat-scoped documents ∪ any documentIds on this turn.
  */
 export async function POST(request: Request, context: RouteContext) {
   const session = await requireSession()
@@ -41,26 +41,30 @@ export async function POST(request: Request, context: RouteContext) {
   const documentIds = Array.isArray(body.documentIds) ? body.documentIds : []
   const modelId = body.modelId?.trim() || undefined
 
-  if (!content && documentIds.length === 0) {
-    return NextResponse.json(
-      { error: "Message text or at least one document is required" },
-      { status: 400 }
-    )
-  }
-
   try {
     const chat = await getOwnedChat(session.user.id, chatId)
     if (!chat) {
       return NextResponse.json({ error: "Chat not found" }, { status: 404 })
     }
 
-    // Persist user turn first (no placeholder assistant)
-    await addMessageToChat({
+    const scoped = await getChatScopedDocuments(session.user.id, chatId)
+    if (!content && documentIds.length === 0 && scoped.length === 0) {
+      return NextResponse.json(
+        { error: "Message text or at least one document is required" },
+        { status: 400 }
+      )
+    }
+
+    // Persist user turn; pins any new documentIds onto chat scope
+    const added = await addMessageToChat({
       userId: session.user.id,
       chatId,
       content: content || undefined,
       documentIds,
     })
+
+    const ragDocumentIds =
+      added?.ragDocumentIds ?? scoped.map((d) => d.id)
 
     const query =
       content ||
@@ -74,7 +78,7 @@ export async function POST(request: Request, context: RouteContext) {
         try {
           for await (const token of streamRagAnswer({
             userId: session.user.id,
-            documentIds,
+            documentIds: ragDocumentIds,
             query,
             modelId,
           })) {

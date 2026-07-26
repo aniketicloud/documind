@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm"
 
 import { db } from "@/db"
 import {
+  chatDocuments,
   chatMessageDocuments,
   chatMessages,
   chats,
@@ -13,6 +14,14 @@ export type ChatSummary = {
   title: string
   createdAt: Date
   updatedAt: Date
+}
+
+export type ChatScopedDocument = {
+  id: string
+  name: string
+  contentType: string | null
+  size: number | null
+  status: string
 }
 
 export type ChatMessageDTO = {
@@ -127,6 +136,8 @@ export async function assertOwnedDocumentIds(
       id: documents.id,
       name: documents.name,
       status: documents.status,
+      contentType: documents.contentType,
+      size: documents.size,
     })
     .from(documents)
     .where(
@@ -138,6 +149,132 @@ export async function assertOwnedDocumentIds(
   }
 
   return rows
+}
+
+/** Documents pinned to this chat for RAG on every turn. */
+export async function getChatScopedDocuments(
+  userId: string,
+  chatId: string
+): Promise<ChatScopedDocument[]> {
+  const chat = await getOwnedChat(userId, chatId)
+  if (!chat) return []
+
+  return db
+    .select({
+      id: documents.id,
+      name: documents.name,
+      contentType: documents.contentType,
+      size: documents.size,
+      status: documents.status,
+    })
+    .from(chatDocuments)
+    .innerJoin(documents, eq(chatDocuments.documentId, documents.id))
+    .where(
+      and(eq(chatDocuments.chatId, chatId), eq(documents.userId, userId))
+    )
+    .orderBy(asc(chatDocuments.createdAt))
+}
+
+/**
+ * Pin documents to a chat (idempotent). Only owner’s docs.
+ * Returns the full scoped list after update.
+ */
+export async function addDocumentsToChatScope(options: {
+  userId: string
+  chatId: string
+  documentIds: string[]
+}) {
+  const chat = await getOwnedChat(options.userId, options.chatId)
+  if (!chat) return null
+
+  const unique = [...new Set(options.documentIds.filter(Boolean))]
+  if (unique.length === 0) {
+    return getChatScopedDocuments(options.userId, options.chatId)
+  }
+
+  await assertOwnedDocumentIds(options.userId, unique)
+
+  const existing = await db
+    .select({ documentId: chatDocuments.documentId })
+    .from(chatDocuments)
+    .where(eq(chatDocuments.chatId, options.chatId))
+
+  const have = new Set(existing.map((r) => r.documentId))
+  const toInsert = unique.filter((id) => !have.has(id))
+  if (toInsert.length > 0) {
+    await db.insert(chatDocuments).values(
+      toInsert.map((documentId) => ({
+        chatId: options.chatId,
+        documentId,
+      }))
+    )
+  }
+
+  await db
+    .update(chats)
+    .set({ updatedAt: new Date() })
+    .where(
+      and(eq(chats.id, options.chatId), eq(chats.userId, options.userId))
+    )
+
+  return getChatScopedDocuments(options.userId, options.chatId)
+}
+
+export async function removeDocumentFromChatScope(options: {
+  userId: string
+  chatId: string
+  documentId: string
+}) {
+  const chat = await getOwnedChat(options.userId, options.chatId)
+  if (!chat) return null
+
+  await db
+    .delete(chatDocuments)
+    .where(
+      and(
+        eq(chatDocuments.chatId, options.chatId),
+        eq(chatDocuments.documentId, options.documentId)
+      )
+    )
+
+  return getChatScopedDocuments(options.userId, options.chatId)
+}
+
+/** Replace entire chat document scope. */
+export async function setChatDocumentScope(options: {
+  userId: string
+  chatId: string
+  documentIds: string[]
+}) {
+  const chat = await getOwnedChat(options.userId, options.chatId)
+  if (!chat) return null
+
+  const unique = [...new Set(options.documentIds.filter(Boolean))]
+  if (unique.length > 0) {
+    await assertOwnedDocumentIds(options.userId, unique)
+  }
+
+  await db
+    .delete(chatDocuments)
+    .where(eq(chatDocuments.chatId, options.chatId))
+
+  if (unique.length > 0) {
+    await db.insert(chatDocuments).values(
+      unique.map((documentId) => ({
+        chatId: options.chatId,
+        documentId,
+      }))
+    )
+  }
+
+  await db
+    .update(chats)
+    .set({ updatedAt: new Date() })
+    .where(
+      and(eq(chats.id, options.chatId), eq(chats.userId, options.userId))
+    )
+
+  return getChatScopedDocuments(options.userId, options.chatId)
 }
 
 export async function createChatWithFirstMessage(options: {
@@ -185,9 +322,17 @@ export async function createChatWithFirstMessage(options: {
         documentId,
       }))
     )
+    // Pin to chat scope so follow-up turns keep using these docs
+    await db.insert(chatDocuments).values(
+      documentIds.map((documentId) => ({
+        chatId,
+        documentId,
+      }))
+    )
   }
 
   const messages = await getChatMessages(chatId)
+  const scopedDocuments = await getChatScopedDocuments(options.userId, chatId)
   return {
     chat: {
       id: chatId,
@@ -197,6 +342,7 @@ export async function createChatWithFirstMessage(options: {
     },
     messages,
     userMessageId,
+    scopedDocuments,
   }
 }
 
@@ -212,11 +358,20 @@ export async function addMessageToChat(options: {
   const content = options.content?.trim() || null
   const documentIds = options.documentIds ?? []
 
-  if (!content && documentIds.length === 0) {
+  // Allow text-only if chat already has scoped docs (RAG without re-attaching)
+  const scopedBefore = await getChatScopedDocuments(options.userId, chat.id)
+  if (!content && documentIds.length === 0 && scopedBefore.length === 0) {
     throw new Error("Message text or at least one document is required")
   }
 
-  await assertOwnedDocumentIds(options.userId, documentIds)
+  if (documentIds.length > 0) {
+    await assertOwnedDocumentIds(options.userId, documentIds)
+    await addDocumentsToChatScope({
+      userId: options.userId,
+      chatId: chat.id,
+      documentIds,
+    })
+  }
 
   const userMessageId = crypto.randomUUID()
   const now = new Date()
@@ -229,6 +384,7 @@ export async function addMessageToChat(options: {
     createdAt: now,
   })
 
+  // Link turn attachments on the message (for history); may be empty if using scope only
   if (documentIds.length > 0) {
     await db.insert(chatMessageDocuments).values(
       documentIds.map((documentId) => ({
@@ -244,11 +400,35 @@ export async function addMessageToChat(options: {
     .where(and(eq(chats.id, chat.id), eq(chats.userId, options.userId)))
 
   const messages = await getChatMessages(chat.id)
+  const scopedDocuments = await getChatScopedDocuments(options.userId, chat.id)
   return {
     chat: { ...chat, updatedAt: now },
     messages,
     userMessageId,
+    scopedDocuments,
+    /** IDs to use for RAG this turn */
+    ragDocumentIds: scopedDocuments.map((d) => d.id),
   }
+}
+
+/**
+ * Resolve document IDs for RAG: existing chat scope ∪ any ids passed this turn.
+ * Caller should pin turn ids first via addDocumentsToChatScope when appropriate.
+ */
+export async function resolveRagDocumentIds(options: {
+  userId: string
+  chatId: string
+  turnDocumentIds?: string[]
+}) {
+  if (options.turnDocumentIds?.length) {
+    await addDocumentsToChatScope({
+      userId: options.userId,
+      chatId: options.chatId,
+      documentIds: options.turnDocumentIds,
+    })
+  }
+  const scoped = await getChatScopedDocuments(options.userId, options.chatId)
+  return scoped.map((d) => d.id)
 }
 
 /** Persist streaming assistant reply after generation. */

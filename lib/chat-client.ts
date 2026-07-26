@@ -19,6 +19,15 @@ export type ChatMessageDTO = {
   }[]
 }
 
+/** Docs pinned to the whole chat (used for RAG every turn). */
+export type ChatScopedDocument = {
+  id: string
+  name: string
+  contentType: string | null
+  size: number | null
+  status: string
+}
+
 export async function listChats(): Promise<ChatSummary[]> {
   const res = await fetch("/api/chats", { cache: "no-store" })
   if (!res.ok) {
@@ -84,6 +93,15 @@ export async function streamCreateChat(
   }
   const chatId = res.headers.get("X-Chat-Id")
   if (!chatId) throw new Error("Missing chat id from stream")
+  const titleHeader = res.headers.get("X-Chat-Title")
+  let title: string | undefined
+  if (titleHeader) {
+    try {
+      title = decodeURIComponent(titleHeader)
+    } catch {
+      title = titleHeader
+    }
+  }
 
   const reader = res.body?.getReader()
   if (!reader) throw new Error("No stream body")
@@ -96,7 +114,7 @@ export async function streamCreateChat(
     full += chunk
     onToken(chunk)
   }
-  return { chatId, content: full }
+  return { chatId, content: full, title }
 }
 
 /** Append user message + stream assistant on existing chat. */
@@ -137,7 +155,36 @@ export async function getChat(chatId: string) {
   return (await res.json()) as {
     chat: ChatSummary
     messages: ChatMessageDTO[]
+    scopedDocuments: ChatScopedDocument[]
   }
+}
+
+export async function pinChatDocuments(
+  chatId: string,
+  documentIds: string[]
+) {
+  const res = await fetch(`/api/chats/${chatId}/documents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ documentIds }),
+  })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { error?: string } | null
+    throw new Error(data?.error ?? "Failed to pin documents")
+  }
+  return (await res.json()) as { documents: ChatScopedDocument[] }
+}
+
+export async function unpinChatDocument(chatId: string, documentId: string) {
+  const res = await fetch(
+    `/api/chats/${chatId}/documents?documentId=${encodeURIComponent(documentId)}`,
+    { method: "DELETE" }
+  )
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { error?: string } | null
+    throw new Error(data?.error ?? "Failed to unpin document")
+  }
+  return (await res.json()) as { documents: ChatScopedDocument[] }
 }
 
 export async function sendChatMessage(

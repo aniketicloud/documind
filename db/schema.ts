@@ -141,3 +141,24 @@ export const chatMessageDocuments = pgTable(
     index("chat_message_documents_documentId_idx").on(table.documentId),
   ]
 )
+
+/**
+ * Documents scoped to a whole chat (pinned for RAG on every turn).
+ * Cascades when chat is deleted; documents themselves are kept.
+ */
+export const chatDocuments = pgTable(
+  "chat_documents",
+  {
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chatId, table.documentId] }),
+    index("chat_documents_documentId_idx").on(table.documentId),
+  ]
+)

@@ -24,6 +24,17 @@ export type ChatScopedDocument = {
   status: string
 }
 
+/** RAG citation shown under assistant replies (sources footer). */
+export type MessageSource = {
+  documentId: string
+  documentName: string
+  chunkIndex: number
+  /** Similarity score from Qdrant (higher is closer). */
+  score: number
+  /** Short preview of the retrieved chunk. */
+  snippet: string
+}
+
 export type ChatMessageDTO = {
   id: string
   role: string
@@ -36,6 +47,8 @@ export type ChatMessageDTO = {
     size: number | null
     status: string
   }[]
+  /** Present on assistant messages when RAG retrieved chunks. */
+  sources: MessageSource[] | null
 }
 
 export function makeChatTitle(input: {
@@ -73,12 +86,37 @@ export async function getOwnedChat(userId: string, chatId: string) {
   return chat ?? null
 }
 
+function normalizeSources(
+  raw: unknown
+): MessageSource[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null
+  const out: MessageSource[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue
+    const o = item as Record<string, unknown>
+    const documentId = typeof o.documentId === "string" ? o.documentId : ""
+    const documentName =
+      typeof o.documentName === "string" ? o.documentName : documentId
+    const chunkIndex =
+      typeof o.chunkIndex === "number" && Number.isFinite(o.chunkIndex)
+        ? o.chunkIndex
+        : 0
+    const score =
+      typeof o.score === "number" && Number.isFinite(o.score) ? o.score : 0
+    const snippet = typeof o.snippet === "string" ? o.snippet : ""
+    if (!documentId) continue
+    out.push({ documentId, documentName, chunkIndex, score, snippet })
+  }
+  return out.length > 0 ? out : null
+}
+
 export async function getChatMessages(chatId: string): Promise<ChatMessageDTO[]> {
   const rows = await db
     .select({
       id: chatMessages.id,
       role: chatMessages.role,
       content: chatMessages.content,
+      sources: chatMessages.sources,
       createdAt: chatMessages.createdAt,
     })
     .from(chatMessages)
@@ -118,8 +156,12 @@ export async function getChatMessages(chatId: string): Promise<ChatMessageDTO[]>
   }
 
   return rows.map((row) => ({
-    ...row,
+    id: row.id,
+    role: row.role,
+    content: row.content,
+    createdAt: row.createdAt,
     attachments: byMessage.get(row.id) ?? [],
+    sources: row.role === "assistant" ? normalizeSources(row.sources) : null,
   }))
 }
 
@@ -419,17 +461,21 @@ export async function saveAssistantMessage(options: {
   userId: string
   chatId: string
   content: string
+  sources?: MessageSource[] | null
 }) {
   const chat = await getOwnedChat(options.userId, options.chatId)
   if (!chat) return null
 
   const now = new Date()
   const id = crypto.randomUUID()
+  const sources =
+    options.sources && options.sources.length > 0 ? options.sources : null
   await db.insert(chatMessages).values({
     id,
     chatId: chat.id,
     role: "assistant",
     content: options.content,
+    sources,
     createdAt: now,
   })
   await db
@@ -437,7 +483,13 @@ export async function saveAssistantMessage(options: {
     .set({ updatedAt: now })
     .where(and(eq(chats.id, chat.id), eq(chats.userId, options.userId)))
 
-  return { id, chatId: chat.id, content: options.content, createdAt: now }
+  return {
+    id,
+    chatId: chat.id,
+    content: options.content,
+    sources,
+    createdAt: now,
+  }
 }
 
 export async function renameOwnedChat(

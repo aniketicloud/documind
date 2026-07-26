@@ -1,6 +1,7 @@
 import {
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   serial,
@@ -107,6 +108,18 @@ export const chats = pgTable(
   ]
 )
 
+/**
+ * Citation from RAG retrieval, stored on assistant messages.
+ * Matches MessageSource in lib/chats.ts / lib/chat-client.ts.
+ */
+export type ChatMessageSource = {
+  documentId: string
+  documentName: string
+  chunkIndex: number
+  score: number
+  snippet: string
+}
+
 /** Messages within a chat. Roles: user | assistant | system */
 export const chatMessages = pgTable(
   "chat_messages",
@@ -117,6 +130,8 @@ export const chatMessages = pgTable(
       .references(() => chats.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
     content: text("content"),
+    /** RAG citations for assistant turns (null for user / non-RAG). */
+    sources: jsonb("sources").$type<ChatMessageSource[] | null>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

@@ -5,6 +5,15 @@ export type ChatSummary = {
   updatedAt: string | Date
 }
 
+/** RAG citation under assistant messages (sources footer). */
+export type MessageSource = {
+  documentId: string
+  documentName: string
+  chunkIndex: number
+  score: number
+  snippet: string
+}
+
 export type ChatMessageDTO = {
   id: string
   role: string
@@ -17,6 +26,7 @@ export type ChatMessageDTO = {
     size: number | null
     status: string
   }[]
+  sources?: MessageSource[] | null
 }
 
 /** Docs pinned to the whole chat (used for RAG every turn). */

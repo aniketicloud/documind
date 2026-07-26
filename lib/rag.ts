@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm"
 
 import { db } from "@/db"
 import { documents } from "@/db/schema"
+import type { MessageSource } from "@/lib/chats"
 import { embedText } from "@/lib/gemini"
 import { streamChatCompletion } from "@/lib/llm"
 import { searchDocumentChunks, type ChunkPayload } from "@/lib/qdrant"
@@ -65,6 +66,25 @@ export async function retrieveContext(options: {
   }
 }
 
+/** Short, single-line preview for the sources footer (no full chunk dump). */
+function snippetFromText(text: string, maxLen = 140): string {
+  const collapsed = text.replace(/\s+/g, " ").trim()
+  if (collapsed.length <= maxLen) return collapsed
+  return `${collapsed.slice(0, maxLen - 1)}…`
+}
+
+export function chunksToSources(
+  chunks: { score: number; payload: ChunkPayload }[]
+): MessageSource[] {
+  return chunks.map((c) => ({
+    documentId: c.payload.documentId,
+    documentName: c.payload.documentName || c.payload.documentId,
+    chunkIndex: c.payload.chunkIndex,
+    score: Math.round(c.score * 1000) / 1000,
+    snippet: snippetFromText(c.payload.text || ""),
+  }))
+}
+
 export function buildRagPrompt(options: {
   query: string
   chunks: { score: number; payload: ChunkPayload }[]
@@ -102,12 +122,40 @@ When the user attaches indexed documents on a later message, prefer those source
   return { system, user: query }
 }
 
+/**
+ * Stream assistant tokens and collect RAG citations.
+ * Prefer this in API routes (plain text body + sources for persistence).
+ */
+export async function streamRagAnswerWithSources(
+  options: {
+    userId: string
+    documentIds: string[]
+    query: string
+    modelId?: string | null
+  },
+  onToken: (token: string) => void
+): Promise<{ content: string; sources: MessageSource[] }> {
+  const gen = streamRagAnswer(options)
+  let content = ""
+  let next = await gen.next()
+  while (!next.done) {
+    content += next.value
+    onToken(next.value)
+    next = await gen.next()
+  }
+  return { content, sources: next.value ?? [] }
+}
+
+/**
+ * Stream assistant tokens. Generator return value is the RAG citation list
+ * (empty for general chat / not-ready docs).
+ */
 export async function* streamRagAnswer(options: {
   userId: string
   documentIds: string[]
   query: string
   modelId?: string | null
-}) {
+}): AsyncGenerator<string, MessageSource[]> {
   const query =
     options.query.trim() ||
     "Summarize the main points of the attached document(s)."
@@ -122,7 +170,7 @@ export async function* streamRagAnswer(options: {
     })) {
       yield token
     }
-    return
+    return []
   }
 
   const { chunks, indexedDocs, note } = await retrieveContext({
@@ -133,8 +181,10 @@ export async function* streamRagAnswer(options: {
 
   if (note === "none_indexed") {
     yield "I can only answer from **indexed** documents. The attached file(s) are not indexed yet (still processing, failed, or not text-extractable for RAG). Open **My documents**, wait for status `indexed`, and use a `.txt` / `.md` / `.csv` or a **text-based PDF**. Ensure `docker compose up -d` is running (includes the ingest worker and PDF extract service). You can still chat without attachments, or switch model in the composer if one provider is rate-limited."
-    return
+    return []
   }
+
+  const sources = chunksToSources(chunks)
 
   const { system, user } = buildRagPrompt({
     query,
@@ -149,4 +199,6 @@ export async function* streamRagAnswer(options: {
   })) {
     yield token
   }
+
+  return sources
 }

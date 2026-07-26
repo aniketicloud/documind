@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { createChatWithFirstMessage, saveAssistantMessage } from "@/lib/chats"
-import { streamRagAnswer } from "@/lib/rag"
+import { streamRagAnswerWithSources } from "@/lib/rag"
 import { requireSession } from "@/lib/session"
 
 /**
@@ -48,21 +48,23 @@ export async function POST(request: Request) {
       "Summarize the main points of the attached document(s)."
 
     const encoder = new TextEncoder()
-    let full = ""
 
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          for await (const token of streamRagAnswer({
-            userId: session.user.id,
-            documentIds: ragDocumentIds,
-            query,
-            modelId,
-          })) {
-            full += token
-            controller.enqueue(encoder.encode(token))
-          }
+          const { content: streamed, sources } = await streamRagAnswerWithSources(
+            {
+              userId: session.user.id,
+              documentIds: ragDocumentIds,
+              query,
+              modelId,
+            },
+            (token) => {
+              controller.enqueue(encoder.encode(token))
+            }
+          )
 
+          let full = streamed
           if (!full.trim()) {
             full =
               "I could not generate a response. Check ZAI_API_KEY / GEMINI_API_KEY and try again."
@@ -73,6 +75,7 @@ export async function POST(request: Request) {
             userId: session.user.id,
             chatId: created.chat.id,
             content: full,
+            sources,
           })
           controller.close()
         } catch (error) {
@@ -86,6 +89,7 @@ export async function POST(request: Request) {
               userId: session.user.id,
               chatId: created.chat.id,
               content: fallback,
+              sources: null,
             })
           } catch {
             // ignore

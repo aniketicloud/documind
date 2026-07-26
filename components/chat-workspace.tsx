@@ -64,6 +64,7 @@ import {
   type ChatModelOption,
   type ChatScopedDocument,
   type ChatSummary,
+  type MessageSource,
 } from "@/lib/chat-client"
 import { setChatHandoff, takeChatHandoff } from "@/lib/chat-handoff"
 import {
@@ -177,8 +178,60 @@ function formatTime(value: string | Date) {
   }
 }
 
+function formatScore(score: number) {
+  if (!Number.isFinite(score)) return ""
+  // Qdrant cosine scores are often 0–1; show as percent when in that range
+  if (score >= 0 && score <= 1) return `${Math.round(score * 100)}%`
+  return score.toFixed(2)
+}
+
+/** Citations under assistant answers — which docs/chunks grounded the reply. */
+function MessageSourcesFooter({ sources }: { sources: MessageSource[] }) {
+  if (sources.length === 0) return null
+
+  return (
+    <div className="mt-1 max-w-prose space-y-1.5 px-0">
+      <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        Sources
+      </p>
+      <ul className="flex flex-wrap gap-1.5">
+        {sources.map((src, i) => (
+          <li key={`${src.documentId}-${src.chunkIndex}-${i}`}>
+            <span
+              title={
+                src.snippet
+                  ? `${src.documentName} · chunk ${src.chunkIndex}\n${src.snippet}`
+                  : `${src.documentName} · chunk ${src.chunkIndex}`
+              }
+              className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/80 bg-muted/50 px-2 py-1 text-xs text-foreground/90"
+            >
+              <HugeiconsIcon
+                icon={File01Icon}
+                strokeWidth={2}
+                className="size-3 shrink-0 text-muted-foreground"
+              />
+              <span className="min-w-0 truncate font-medium">
+                {src.documentName}
+              </span>
+              <span className="shrink-0 text-muted-foreground">
+                §{src.chunkIndex}
+              </span>
+              {Number.isFinite(src.score) ? (
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  {formatScore(src.score)}
+                </span>
+              ) : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function ChatMessageRow({ message }: { message: ChatMessageDTO }) {
   const isUser = message.role === "user"
+  const sources = !isUser && message.sources?.length ? message.sources : null
 
   return (
     <Message align={isUser ? "end" : "start"}>
@@ -215,6 +268,8 @@ function ChatMessageRow({ message }: { message: ChatMessageDTO }) {
             </BubbleContent>
           </Bubble>
         ) : null}
+
+        {sources ? <MessageSourcesFooter sources={sources} /> : null}
 
         <MessageFooter>{formatTime(message.createdAt)}</MessageFooter>
       </MessageContent>
@@ -734,6 +789,7 @@ export function ChatWorkspace({
           content: sentText,
           createdAt: now,
           attachments: sentAttachments,
+          sources: null,
         },
         {
           id: tempAssistantId,
@@ -741,6 +797,7 @@ export function ChatWorkspace({
           content: "",
           createdAt: now,
           attachments: [],
+          sources: null,
         },
       ])
     } else {
@@ -754,6 +811,7 @@ export function ChatWorkspace({
           content: sentText,
           createdAt: now,
           attachments: sentAttachments,
+          sources: null,
         },
         {
           id: tempAssistantId,
@@ -761,6 +819,7 @@ export function ChatWorkspace({
           content: "",
           createdAt: now,
           attachments: [],
+          sources: null,
         },
       ])
     }
@@ -787,25 +846,36 @@ export function ChatWorkspace({
         )
         notifyChatsChanged()
 
-        const nowDate = new Date()
-        const handoffMessages: ChatMessageDTO[] = [
-          {
-            id: tempUserId,
-            role: "user",
-            content: sentText,
-            createdAt: now,
-            attachments: sentAttachments,
-          },
-          {
-            id: tempAssistantId,
-            role: "assistant",
-            content: result.content,
-            createdAt: nowDate.toISOString(),
-            attachments: [],
-          },
-        ]
-        const handoffScoped: ChatScopedDocument[] = documentIds.map(
-          (id, i) => {
+        // Canonical messages include sources footer + real IDs
+        let handoffMessages: ChatMessageDTO[]
+        let handoffScoped: ChatScopedDocument[]
+        let handoffChat: ChatSummary
+        try {
+          const data = await getChat(result.chatId)
+          handoffChat = data.chat
+          handoffMessages = data.messages
+          handoffScoped = data.scopedDocuments ?? []
+        } catch {
+          const nowDate = new Date()
+          handoffMessages = [
+            {
+              id: tempUserId,
+              role: "user",
+              content: sentText,
+              createdAt: now,
+              attachments: sentAttachments,
+              sources: null,
+            },
+            {
+              id: tempAssistantId,
+              role: "assistant",
+              content: result.content,
+              createdAt: nowDate.toISOString(),
+              attachments: [],
+              sources: null,
+            },
+          ]
+          handoffScoped = documentIds.map((id, i) => {
             const fromAttach = sentAttachments.find((a) => a.id === id)
             return {
               id,
@@ -814,13 +884,13 @@ export function ChatWorkspace({
               size: fromAttach?.size ?? null,
               status: fromAttach?.status ?? "indexed",
             }
+          })
+          handoffChat = {
+            id: result.chatId,
+            title: result.title || sentText?.slice(0, 60) || "New chat",
+            createdAt: nowDate.toISOString(),
+            updatedAt: nowDate.toISOString(),
           }
-        )
-        const handoffChat: ChatSummary = {
-          id: result.chatId,
-          title: result.title || sentText?.slice(0, 60) || "New chat",
-          createdAt: nowDate.toISOString(),
-          updatedAt: nowDate.toISOString(),
         }
         setChatHandoff({
           chatId: result.chatId,

@@ -270,6 +270,7 @@ export async function processIngestJob(job: typeof documentJobs.$inferSelect) {
     extracted.text === null &&
     (extracted.method === "utf8" ||
       extracted.method === "pymupdf" ||
+      extracted.method === "ocr_tesseract" ||
       extracted.method === "pdf_service" ||
       extracted.method === "pdf")
   ) {

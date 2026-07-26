@@ -1,6 +1,5 @@
 /**
- * Client for the local Python pdf-extract service (PyMuPDF F1).
- * OCR modes auto|force are reserved for F1b (501 from service).
+ * Client for Docker pdf-extract service (PyMuPDF + OCRmyPDF/Tesseract F1b).
  */
 
 export type PdfExtractResult = {
@@ -12,6 +11,8 @@ export type PdfExtractResult = {
   reason: string | null
 }
 
+export type PdfOcrMode = "off" | "auto" | "force"
+
 export function getPdfExtractUrl() {
   return (
     process.env.PDF_EXTRACT_URL?.trim().replace(/\/$/, "") ||
@@ -19,13 +20,24 @@ export function getPdfExtractUrl() {
   )
 }
 
+/** Default for ingest: auto (native first, OCR if needed). */
+export function getPdfOcrMode(): PdfOcrMode {
+  const raw = process.env.PDF_OCR_MODE?.trim().toLowerCase()
+  if (raw === "off" || raw === "force" || raw === "auto") return raw
+  return "auto"
+}
+
 export async function extractPdfText(
   pdfBytes: Buffer,
-  options?: { ocr?: "off" | "auto" | "force" }
+  options?: { ocr?: PdfOcrMode }
 ): Promise<PdfExtractResult> {
-  const ocr = options?.ocr ?? "off"
+  const ocr = options?.ocr ?? getPdfOcrMode()
   const base = getPdfExtractUrl()
   const url = `${base}/extract?ocr=${encodeURIComponent(ocr)}`
+  // OCR can be slow on multi-page scans
+  const timeoutMs = Number(
+    process.env.PDF_EXTRACT_TIMEOUT_MS || (ocr === "off" ? 120_000 : 300_000)
+  )
 
   let res: Response
   try {
@@ -36,10 +48,7 @@ export async function extractPdfText(
         Accept: "application/json",
       },
       body: new Uint8Array(pdfBytes),
-      // Node fetch
-      signal: AbortSignal.timeout(
-        Number(process.env.PDF_EXTRACT_TIMEOUT_MS || 120_000)
-      ),
+      signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (error) {
     const message =

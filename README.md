@@ -43,11 +43,11 @@ Default RustFS credentials: `rustfsadmin` / `rustfsadmin`.
 | Format | Notes |
 |--------|--------|
 | `.txt`, `.md`, `.csv` | Extracted in the Node worker |
-| **Text-based PDF** | Extracted via Docker `pdf-extract` (PyMuPDF) |
-| Scanned / image PDF | `failed` until OCR (F1b) |
+| **Text-based PDF** | Fast native extract (PyMuPDF) |
+| **Scanned PDF** | Local OCR (page render + Tesseract), free/open source |
 | DOCX / XLSX (binary) | Storage OK; full text extract later |
 
-Pin **indexed** docs to a chat, then ask questions.
+Add docs in the chat **documents panel** (collapsible), leave them **checked**, wait until **Indexed**, then ask.
 
 ## Stack
 

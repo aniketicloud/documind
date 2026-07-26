@@ -40,9 +40,8 @@ export async function POST(request: Request) {
       documentIds,
     })
 
-    // RAG uses chat-scoped docs (pinned on create when documentIds provided)
-    const ragDocumentIds =
-      created.scopedDocuments?.map((d) => d.id) ?? documentIds
+    // RAG uses the docs selected for this first message (also pinned to chat)
+    const ragDocumentIds = documentIds
 
     const query =
       content ||

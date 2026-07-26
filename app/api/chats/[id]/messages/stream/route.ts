@@ -16,7 +16,8 @@ type RouteContext = {
 /**
  * POST /api/chats/:id/messages/stream
  * Body: { content?: string, documentIds?: string[], modelId?: string }
- * RAG uses chat-scoped documents ∪ any documentIds on this turn.
+ * documentIds = docs selected for RAG this turn (subset of chat pins / new attaches).
+ * Pins are managed separately; unselected pins stay in the chat list.
  */
 export async function POST(request: Request, context: RouteContext) {
   const session = await requireSession()
@@ -55,7 +56,7 @@ export async function POST(request: Request, context: RouteContext) {
       )
     }
 
-    // Persist user turn; pins any new documentIds onto chat scope
+    // Persist user turn; pins any new documentIds; RAG uses selection only
     const added = await addMessageToChat({
       userId: session.user.id,
       chatId,
@@ -63,8 +64,7 @@ export async function POST(request: Request, context: RouteContext) {
       documentIds,
     })
 
-    const ragDocumentIds =
-      added?.ragDocumentIds ?? scoped.map((d) => d.id)
+    const ragDocumentIds = added?.ragDocumentIds ?? documentIds
 
     const query =
       content ||

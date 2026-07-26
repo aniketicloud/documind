@@ -1,10 +1,10 @@
 /**
  * Extract plain text from allowed formats.
  * - txt/md/csv/rtf: in-process UTF-8
- * - pdf: Python pdf-extract service (PyMuPDF); OCR later via same API
+ * - pdf: Docker pdf-extract (PyMuPDF native + OCRmyPDF/Tesseract when ocr=auto|force)
  */
 
-import { extractPdfText } from "@/lib/pdf-extract-client"
+import { extractPdfText, getPdfOcrMode } from "@/lib/pdf-extract-client"
 
 export type ExtractResult =
   | { text: string; method: string }
@@ -70,16 +70,16 @@ export async function extractDocumentText(
 
   if (lower.endsWith(".pdf")) {
     try {
-      const result = await extractPdfText(body, { ocr: "off" })
+      const result = await extractPdfText(body, { ocr: getPdfOcrMode() })
       if (result.text) {
         return { text: result.text, method: result.method || "pymupdf" }
       }
       return {
         text: null,
-        method: result.method || "pymupdf",
+        method: result.method || "pdf",
         reason:
           result.reason ||
-          "No extractable text (scanned/image PDF?). OCR is not enabled yet.",
+          "No extractable text after native extract and/or OCR.",
       }
     } catch (error) {
       const message =

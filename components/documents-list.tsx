@@ -288,8 +288,8 @@ export function DocumentsList() {
         Allowed types: {DOCUMENT_EXTENSIONS.join(", ")} · max 50MB · statuses:
         pending → ready → processing → indexed (requires{" "}
         <code className="rounded bg-muted px-1">docker compose up -d</code>
-        {" "}— ingest worker + PDF extract). Text PDFs and .txt/.md/.csv support
-        RAG when indexed.
+        {" "}— ingest worker + PDF extract/OCR). Text files and PDFs (including
+        scans via OCR) support RAG when indexed.
       </p>
 
       {documents.length === 0 ? (

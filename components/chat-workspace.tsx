@@ -16,8 +16,10 @@ import {
   AttachmentTitle,
 } from "@/components/ui/attachment"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -81,6 +83,8 @@ import {
 import { cn } from "@/lib/utils"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
+  ArrowDown01Icon,
+  ArrowUp01Icon,
   Attachment01Icon,
   Cancel01Icon,
   File01Icon,
@@ -253,6 +257,10 @@ export function ChatWorkspace({
   const [scopedDocuments, setScopedDocuments] = React.useState<
     ChatScopedDocument[]
   >([])
+  /** Doc IDs included in RAG for the next send (subset of chat pins / staged). */
+  const [selectedForRag, setSelectedForRag] = React.useState<Set<string>>(
+    () => new Set()
+  )
   const [loadingChat, setLoadingChat] = React.useState(mode === "chat")
   const [input, setInput] = React.useState("")
   const [attachments, setAttachments] = React.useState<AttachedDocument[]>([])
@@ -261,14 +269,78 @@ export function ChatWorkspace({
   const [isBusy, setIsBusy] = React.useState(false)
   const [models, setModels] = React.useState<ChatModelOption[]>([])
   const [modelId, setModelId] = React.useState<string>("")
+  const [docsPanelOpen, setDocsPanelOpen] = React.useState(true)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   /** Sync lock — React state alone can't block double-clicks before re-render. */
   const submitLockRef = React.useRef(false)
+
+  React.useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem("documind:docs-panel-open")
+      if (stored === "0") setDocsPanelOpen(false)
+      if (stored === "1") setDocsPanelOpen(true)
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const setDocsPanelOpenPersist = (open: boolean) => {
+    setDocsPanelOpen(open)
+    try {
+      window.localStorage.setItem(
+        "documind:docs-panel-open",
+        open ? "1" : "0"
+      )
+    } catch {
+      // ignore
+    }
+  }
 
   const scopedIds = React.useMemo(
     () => new Set(scopedDocuments.map((d) => d.id)),
     [scopedDocuments]
   )
+
+  const prevPinnedIdsRef = React.useRef<Set<string>>(new Set())
+
+  // Drop selection for unpinned docs; auto-select only *newly* pinned docs
+  React.useEffect(() => {
+    const pinnedIds = new Set(scopedDocuments.map((d) => d.id))
+    const prevPinned = prevPinnedIdsRef.current
+    setSelectedForRag((prev) => {
+      const next = new Set<string>()
+      for (const id of pinnedIds) {
+        if (prev.has(id)) {
+          next.add(id) // keep user choice (selected)
+        } else if (!prevPinned.has(id)) {
+          next.add(id) // brand-new pin → selected by default
+        }
+        // else: was pinned, user had deselected (not in prev) → stay deselected
+      }
+      return next
+    })
+    prevPinnedIdsRef.current = pinnedIds
+  }, [scopedDocuments])
+
+  // Poll status while any chat doc is still processing
+  React.useEffect(() => {
+    if (mode !== "chat" || !chatId) return
+    const pending = scopedDocuments.some(
+      (d) => d.status !== "indexed" && d.status !== "failed"
+    )
+    if (!pending) return
+    const t = window.setInterval(() => {
+      void (async () => {
+        try {
+          const data = await getChat(chatId)
+          setScopedDocuments(data.scopedDocuments ?? [])
+        } catch {
+          // ignore poll errors
+        }
+      })()
+    }, 3000)
+    return () => window.clearInterval(t)
+  }, [mode, chatId, scopedDocuments])
 
   React.useEffect(() => {
     let cancelled = false
@@ -435,16 +507,22 @@ export function ChatWorkspace({
           )
           toast.success(`${doc.name} uploaded`)
           void refreshLibrary()
-          // Existing chat: pin when ready (if already indexed) so follow-ups use it
-          if (mode === "chat" && chatId && doc.status === "indexed") {
+          // Existing chat: pin to chat panel (any status); user selects for RAG
+          if (mode === "chat" && chatId) {
             try {
               const { documents: next } = await pinChatDocuments(chatId, [
                 doc.id,
               ])
               setScopedDocuments(next)
+              setAttachments((current) =>
+                current.filter((item) => item.localId !== localId)
+              )
             } catch {
-              // pin on send instead
+              // keep in composer attachments; pin on send
             }
+          } else {
+            // New chat: staged attachment auto-selected for first send
+            setSelectedForRag((prev) => new Set(prev).add(doc.id))
           }
         } catch (error) {
           const message =
@@ -463,16 +541,21 @@ export function ChatWorkspace({
   }
 
   const handleToggleLibraryDoc = (doc: ListedDocument) => {
-    // Existing chat: pin/unpin to chat scope (persists for all turns)
+    // Existing chat: pin/unpin in chat document panel
     if (mode === "chat" && chatId) {
       if (scopedIds.has(doc.id)) {
         void (async () => {
           try {
             const { documents: next } = await unpinChatDocument(chatId, doc.id)
             setScopedDocuments(next)
+            setSelectedForRag((prev) => {
+              const n = new Set(prev)
+              n.delete(doc.id)
+              return n
+            })
           } catch (error) {
             toast.error(
-              error instanceof Error ? error.message : "Failed to unpin"
+              error instanceof Error ? error.message : "Failed to remove"
             )
           }
         })()
@@ -484,18 +567,24 @@ export function ChatWorkspace({
           setScopedDocuments(next)
           toast.success(`Added ${doc.name} to this chat`)
         } catch (error) {
-          toast.error(error instanceof Error ? error.message : "Failed to pin")
+          toast.error(error instanceof Error ? error.message : "Failed to add")
         }
       })()
       return
     }
 
-    // New chat: stage in composer until first send (then server pins)
+    // New chat: stage until first send
     setAttachments((current) => {
       const exists = current.some((item) => item.documentId === doc.id)
       if (exists) {
+        setSelectedForRag((prev) => {
+          const n = new Set(prev)
+          n.delete(doc.id)
+          return n
+        })
         return current.filter((item) => item.documentId !== doc.id)
       }
+      setSelectedForRag((prev) => new Set(prev).add(doc.id))
       return [
         ...current,
         {
@@ -511,15 +600,40 @@ export function ChatWorkspace({
   }
 
   const handleUnpinScoped = (documentId: string) => {
+    if (mode === "new") {
+      setAttachments((current) =>
+        current.filter((item) => item.documentId !== documentId)
+      )
+      setSelectedForRag((prev) => {
+        const n = new Set(prev)
+        n.delete(documentId)
+        return n
+      })
+      return
+    }
     if (!chatId) return
     void (async () => {
       try {
         const { documents: next } = await unpinChatDocument(chatId, documentId)
         setScopedDocuments(next)
+        setSelectedForRag((prev) => {
+          const n = new Set(prev)
+          n.delete(documentId)
+          return n
+        })
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Failed to unpin")
+        toast.error(error instanceof Error ? error.message : "Failed to remove")
       }
     })()
+  }
+
+  const toggleRagSelection = (documentId: string, checked: boolean) => {
+    setSelectedForRag((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(documentId)
+      else next.delete(documentId)
+      return next
+    })
   }
 
   const handleSend = async () => {
@@ -539,30 +653,72 @@ export function ChatWorkspace({
       toast.error("Remove failed uploads before sending")
       return
     }
-    // Existing chat can send with only scoped docs (no re-attach)
-    if (!text && readyDocs.length === 0 && scopedDocuments.length === 0) return
+    // Selection for RAG + any staged ready uploads not yet in selection
+    const selectedIds = [...selectedForRag]
+    const stagedReadyIds = readyDocs
+      .map((d) => d.documentId as string)
+      .filter(Boolean)
+    // Prefer explicit RAG selection; on new chat also include staged selected
+    let documentIds =
+      mode === "new"
+        ? stagedReadyIds.filter((id) => selectedForRag.has(id))
+        : selectedIds
+
+    // If user only has staged uploads selected via attachments on new chat
+    if (mode === "new" && documentIds.length === 0 && selectedForRag.size > 0) {
+      documentIds = stagedReadyIds.filter((id) => selectedForRag.has(id))
+    }
+
+    if (
+      !text &&
+      documentIds.length === 0 &&
+      scopedDocuments.length === 0 &&
+      readyDocs.length === 0
+    ) {
+      return
+    }
+
+    // Allow send with text only (empty documentIds → general chat)
+    if (!text && documentIds.length === 0) {
+      toast.message("Select at least one document for RAG, or type a message")
+      return
+    }
 
     submitLockRef.current = true
     setIsBusy(true)
-    const documentIds = readyDocs.map((doc) => doc.documentId as string)
     const sentText = text || null
-    const sentAttachments =
-      readyDocs.length > 0
-        ? readyDocs.map((doc) => ({
-            id: doc.documentId as string,
+    const panelDocs =
+      mode === "chat"
+        ? scopedDocuments.filter((d) => selectedForRag.has(d.id))
+        : readyDocs
+            .filter((d) => d.documentId && selectedForRag.has(d.documentId))
+            .map((d) => ({
+              id: d.documentId as string,
+              name: d.name,
+              contentType: null as string | null,
+              size: d.size ?? null,
+              status: "ready",
+            }))
+    const sentAttachments = panelDocs.map((doc) =>
+      "status" in doc && typeof (doc as { status?: string }).status === "string"
+        ? {
+            id: doc.id,
+            name: doc.name,
+            contentType:
+              "contentType" in doc
+                ? ((doc as ChatScopedDocument).contentType ?? null)
+                : null,
+            size: doc.size ?? null,
+            status: (doc as { status: string }).status,
+          }
+        : {
+            id: doc.id,
             name: doc.name,
             contentType: null as string | null,
             size: doc.size ?? null,
             status: "ready",
-          }))
-        : scopedDocuments.map((doc) => ({
-            id: doc.id,
-            name: doc.name,
-            contentType: doc.contentType,
-            size: doc.size,
-            status: doc.status,
-          }))
-
+          }
+    )
     // Optimistic user bubble + streaming assistant
     const tempUserId = `temp-user-${crypto.randomUUID()}`
     const tempAssistantId = `temp-assistant-${crypto.randomUUID()}`
@@ -731,20 +887,87 @@ export function ChatWorkspace({
   const readyDocs = attachments.filter(
     (item) => item.status === "ready" && item.documentId
   )
+  const selectedRagCount = selectedForRag.size
   const canSend =
     !isBusy &&
     !uploading &&
     !attachments.some((item) => item.status === "error") &&
-    (Boolean(input.trim()) ||
-      readyDocs.length > 0 ||
-      scopedDocuments.length > 0)
+    (Boolean(input.trim()) || selectedRagCount > 0)
 
+  // Library checkmarks: pinned (chat) or staged (new)
   const selectedDocumentIds = new Set([
     ...scopedIds,
     ...attachments
       .filter((item) => item.documentId && item.status !== "error")
       .map((item) => item.documentId as string),
   ])
+
+  /** Unified list for the documents panel (chat pins or new-chat staging). */
+  type PanelDoc = {
+    id: string
+    name: string
+    size?: number | null
+    status: string
+    selectable: boolean
+  }
+
+  const panelDocuments: PanelDoc[] =
+    mode === "chat"
+      ? scopedDocuments.map((d) => ({
+          id: d.id,
+          name: d.name,
+          size: d.size,
+          status: d.status,
+          selectable: true,
+        }))
+      : [
+          ...readyDocs
+            .filter((d) => d.documentId)
+            .map((d) => ({
+              id: d.documentId as string,
+              name: d.name,
+              size: d.size,
+              status: "ready",
+              selectable: true,
+            })),
+          ...attachments
+            .filter((d) => d.status === "uploading")
+            .map((d) => ({
+              id: d.localId,
+              name: d.name,
+              size: d.size,
+              status: "uploading",
+              selectable: false,
+            })),
+          ...attachments
+            .filter((d) => d.status === "error")
+            .map((d) => ({
+              id: d.localId,
+              name: d.name,
+              size: d.size,
+              status: "failed",
+              selectable: false,
+            })),
+        ]
+
+  const statusLabel = (status: string) => {
+    if (status === "indexed") return "Indexed"
+    if (status === "failed") return "Failed"
+    if (status === "uploading") return "Uploading…"
+    if (status === "processing" || status === "ready" || status === "pending")
+      return "Processing…"
+    return status
+  }
+
+  const statusVariant = (
+    status: string
+  ): "default" | "secondary" | "destructive" | "outline" => {
+    if (status === "indexed") return "default"
+    if (status === "failed") return "destructive"
+    if (status === "uploading" || status === "processing" || status === "ready")
+      return "secondary"
+    return "outline"
+  }
 
   const headerTitle =
     mode === "new" ? "New chat" : chat?.title || "Chat"
@@ -760,6 +983,121 @@ export function ChatWorkspace({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
+          {/* Collapsible chat documents panel */}
+          {panelDocuments.length > 0 ? (
+            <div className="shrink-0 border-b bg-muted/30">
+              <div className="mx-auto w-full max-w-3xl px-4">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-2 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  aria-expanded={docsPanelOpen}
+                  onClick={() => setDocsPanelOpenPersist(!docsPanelOpen)}
+                >
+                  <span className="min-w-0 truncate">
+                    Documents in this chat
+                    <span className="font-normal">
+                      {" "}
+                      · {panelDocuments.length} file
+                      {panelDocuments.length === 1 ? "" : "s"}
+                      {selectedRagCount > 0
+                        ? ` · ${selectedRagCount} selected`
+                        : " · none selected"}
+                    </span>
+                  </span>
+                  <span
+                    className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary ring-1 ring-primary/25"
+                    aria-hidden
+                  >
+                    <HugeiconsIcon
+                      icon={docsPanelOpen ? ArrowUp01Icon : ArrowDown01Icon}
+                      strokeWidth={2.5}
+                      className="size-3.5"
+                    />
+                  </span>
+                </button>
+
+                {docsPanelOpen ? (
+                  <div className="space-y-2 pb-2.5">
+                    <ul className="flex max-h-36 flex-col gap-1.5 overflow-y-auto">
+                      {panelDocuments.map((doc) => {
+                        const checked = selectedForRag.has(doc.id)
+                        const canToggle =
+                          doc.selectable && doc.status !== "uploading"
+                        return (
+                          <li
+                            key={doc.id}
+                            className="flex items-center gap-2 rounded-lg border bg-card px-2.5 py-1.5 text-sm"
+                          >
+                            <Checkbox
+                              checked={canToggle ? checked : false}
+                              disabled={!canToggle || isBusy}
+                              onCheckedChange={(value) => {
+                                if (!canToggle || !doc.id) return
+                                toggleRagSelection(doc.id, value === true)
+                              }}
+                              aria-label={`Use ${doc.name} for answers`}
+                            />
+                            <HugeiconsIcon
+                              icon={File01Icon}
+                              strokeWidth={2}
+                              className="size-4 shrink-0 text-muted-foreground"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium">{doc.name}</p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {describeFile(doc.name, doc.size)}
+                              </p>
+                            </div>
+                            <Badge variant={statusVariant(doc.status)}>
+                              {statusLabel(doc.status)}
+                            </Badge>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="shrink-0"
+                              disabled={isBusy || doc.status === "uploading"}
+                              aria-label={`Remove ${doc.name} from chat`}
+                              onClick={() => {
+                                if (mode === "new" && !scopedIds.has(doc.id)) {
+                                  setAttachments((current) =>
+                                    current.filter(
+                                      (row) =>
+                                        row.localId !== doc.id &&
+                                        row.documentId !== doc.id
+                                    )
+                                  )
+                                  setSelectedForRag((prev) => {
+                                    const n = new Set(prev)
+                                    n.delete(doc.id)
+                                    return n
+                                  })
+                                  return
+                                }
+                                handleUnpinScoped(doc.id)
+                              }}
+                            >
+                              <HugeiconsIcon
+                                icon={Cancel01Icon}
+                                strokeWidth={2}
+                                className="size-3.5"
+                              />
+                            </Button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    <p className="text-[11px] text-muted-foreground">
+                      Check a file to use it in the next answer. Only{" "}
+                      <strong className="font-medium">Indexed</strong> files
+                      contribute to RAG. Remove deletes it from this chat only.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           <MessageScrollerProvider autoScroll defaultScrollPosition="end">
             <MessageScroller className="min-h-0 flex-1">
               <MessageScrollerViewport aria-label="Chat messages">
@@ -806,73 +1144,6 @@ export function ChatWorkspace({
               ) : null}
 
               <div className="rounded-2xl border bg-card p-2 shadow-sm">
-                {/* Chat-scoped docs: used for RAG on every message until unpinned */}
-                {scopedDocuments.length > 0 ? (
-                  <div className="space-y-1.5 px-2 pt-2">
-                    <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-                      In this chat
-                    </p>
-                    <AttachmentGroup>
-                      {scopedDocuments.map((doc) => (
-                        <FileAttachmentCard
-                          key={doc.id}
-                          title={doc.name}
-                          description={`${describeFile(doc.name, doc.size)} · ${doc.status === "indexed" ? "RAG" : doc.status}`}
-                          state={
-                            doc.status === "indexed"
-                              ? "done"
-                              : doc.status === "failed"
-                                ? "error"
-                                : "processing"
-                          }
-                          onRemove={
-                            isBusy
-                              ? undefined
-                              : () => handleUnpinScoped(doc.id)
-                          }
-                        />
-                      ))}
-                    </AttachmentGroup>
-                  </div>
-                ) : null}
-
-                {attachments.length > 0 ? (
-                  <AttachmentGroup className="px-2 pt-2">
-                    {attachments.map((item) => (
-                      <FileAttachmentCard
-                        key={item.localId}
-                        title={item.name}
-                        description={
-                          item.error
-                            ? item.error
-                            : item.status === "uploading"
-                              ? "Uploading to RustFS…"
-                              : item.source === "library"
-                                ? `${describeFile(item.name, item.size)} · add to chat`
-                                : describeFile(item.name, item.size)
-                        }
-                        state={
-                          item.status === "uploading"
-                            ? "uploading"
-                            : item.status === "error"
-                              ? "error"
-                              : "done"
-                        }
-                        onRemove={
-                          item.status === "uploading"
-                            ? undefined
-                            : () =>
-                                setAttachments((current) =>
-                                  current.filter(
-                                    (row) => row.localId !== item.localId
-                                  )
-                                )
-                        }
-                      />
-                    ))}
-                  </AttachmentGroup>
-                ) : null}
-
                 <textarea
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
@@ -887,7 +1158,7 @@ export function ChatWorkspace({
                   placeholder={
                     isBusy
                       ? "Generating answer…"
-                      : attachments.length > 0
+                      : selectedRagCount > 0
                         ? "Ask about the selected document(s)..."
                         : "Message Documind..."
                   }
@@ -939,8 +1210,8 @@ export function ChatWorkspace({
                       <DropdownMenuContent align="start" className="w-72">
                         <DropdownMenuLabel>
                           {mode === "chat"
-                            ? "Pin to this chat (RAG)"
-                            : "Indexed documents (RAG)"}
+                            ? "Add to this chat"
+                            : "Add documents"}
                         </DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         {libraryLoading ? (
@@ -955,9 +1226,9 @@ export function ChatWorkspace({
                                 No indexed documents
                               </EmptyTitle>
                               <EmptyDescription className="text-xs">
-                                Upload a .txt, .md, .csv, or text-based PDF in
-                                My documents and wait until status is indexed
-                                (docker compose must be running).
+                                Upload a .txt, .md, .csv, or PDF (text or scan)
+                                in My documents and wait until status is
+                                indexed (docker compose must be running).
                               </EmptyDescription>
                             </EmptyHeader>
                           </Empty>
@@ -1058,11 +1329,9 @@ export function ChatWorkspace({
                 </div>
               </div>
               <p className="text-center text-xs text-muted-foreground">
-                {mode === "new"
-                  ? "Indexed docs you add are pinned to the new chat for every follow-up."
-                  : scopedDocuments.length > 0
-                    ? `RAG uses ${scopedDocuments.length} chat document${scopedDocuments.length === 1 ? "" : "s"} until you remove them.`
-                    : "Pin indexed docs to this chat so every message can use them."}
+                {panelDocuments.length > 0
+                  ? "Select documents above for this answer. Deselect to ignore; remove to drop from the chat."
+                  : "Add files with the paperclip or folder — they appear above the messages."}
               </p>
             </div>
           </div>

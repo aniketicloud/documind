@@ -86,7 +86,10 @@ services:
     environment:
       PDF_MIN_USEFUL_CHARS: ${PDF_MIN_USEFUL_CHARS:-40}
       PDF_MAX_PAGES: ${PDF_MAX_PAGES:-200}
+      PDF_OCR_MAX_PAGES: ${PDF_OCR_MAX_PAGES:-30}
       PDF_MAX_CHARS: ${PDF_MAX_CHARS:-500000}
+      PDF_OCR_LANG: ${PDF_OCR_LANG:-eng}
+      PDF_TESSERACT_TIMEOUT: ${PDF_TESSERACT_TIMEOUT:-180}
     healthcheck:
       test:
         [
@@ -118,6 +121,8 @@ services:
       S3_ENDPOINT: http://rustfs:9000
       QDRANT_URL: http://qdrant:6333
       PDF_EXTRACT_URL: http://pdf-extract:8090
+      PDF_OCR_MODE: ${PDF_OCR_MODE:-auto}
+      PDF_EXTRACT_TIMEOUT_MS: ${PDF_EXTRACT_TIMEOUT_MS:-300000}
       INGEST_WORKER_ID: ${INGEST_WORKER_ID:-docker-worker-1}
       INGEST_POLL_MS: ${INGEST_POLL_MS:-1500}
       # GEMINI_API_KEY, QDRANT_COLLECTION, S3_* keys come from env_file

@@ -406,29 +406,12 @@ export async function addMessageToChat(options: {
     messages,
     userMessageId,
     scopedDocuments,
-    /** IDs to use for RAG this turn */
-    ragDocumentIds: scopedDocuments.map((d) => d.id),
+    /**
+     * RAG uses only IDs the client selected for this turn (documentIds),
+     * not every pinned chat doc. Pins stay in scopedDocuments for the panel.
+     */
+    ragDocumentIds: documentIds,
   }
-}
-
-/**
- * Resolve document IDs for RAG: existing chat scope ∪ any ids passed this turn.
- * Caller should pin turn ids first via addDocumentsToChatScope when appropriate.
- */
-export async function resolveRagDocumentIds(options: {
-  userId: string
-  chatId: string
-  turnDocumentIds?: string[]
-}) {
-  if (options.turnDocumentIds?.length) {
-    await addDocumentsToChatScope({
-      userId: options.userId,
-      chatId: options.chatId,
-      documentIds: options.turnDocumentIds,
-    })
-  }
-  const scoped = await getChatScopedDocuments(options.userId, options.chatId)
-  return scoped.map((d) => d.id)
 }
 
 /** Persist streaming assistant reply after generation. */

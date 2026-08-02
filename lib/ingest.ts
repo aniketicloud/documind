@@ -191,9 +191,9 @@ async function tryClaimJob(jobId: string, workerId: string) {
 }
 
 /**
- * Ingest: download object → extract text (txt/md/csv) → chunk → embed → Qdrant.
- * Binary office/PDF without extractors still mark indexed for storage, but with a note
- * that RAG has no chunks (Option F will add parsers).
+ * Ingest: download object → extract text (txt/md/csv/pdf/docx) → chunk → embed → Qdrant.
+ * Types without extractors (e.g. xlsx) still mark indexed for storage, with a soft note
+ * that RAG has no chunks.
  */
 export async function processIngestJob(job: typeof documentJobs.$inferSelect) {
   const [doc] = await db
@@ -266,24 +266,38 @@ export async function processIngestJob(job: typeof documentJobs.$inferSelect) {
       await failJob(job.id, job.documentId, message)
       return { ok: false as const, reason: "embed_failed" }
     }
-  } else if (
-    extracted.text === null &&
-    (extracted.method === "utf8" ||
+  } else if (extracted.text === null) {
+    // Types we claim to extract must never become "indexed" with zero chunks
+    // (that causes chat to pretend the file is ready while RAG has nothing).
+    const lowerName = doc.name.toLowerCase()
+    const expectText =
+      extracted.method === "utf8" ||
       extracted.method === "pymupdf" ||
       extracted.method === "ocr_tesseract" ||
       extracted.method === "pdf_service" ||
-      extracted.method === "pdf")
-  ) {
-    // Empty text / PDF extract failure → failed (user can reprocess after OCR lands)
-    await failJob(
-      job.id,
-      job.documentId,
-      extracted.reason || "No extractable text"
-    )
-    return { ok: false as const, reason: "empty_text" }
-  } else {
-    // Unsupported type for text RAG: still mark indexed for storage lifecycle,
-    // but clear any old vectors and leave a soft note in errorMessage
+      extracted.method === "pdf" ||
+      extracted.method === "mammoth" ||
+      extracted.method === "docx" ||
+      extracted.method === "doc_legacy" ||
+      lowerName.endsWith(".txt") ||
+      lowerName.endsWith(".md") ||
+      lowerName.endsWith(".markdown") ||
+      lowerName.endsWith(".csv") ||
+      lowerName.endsWith(".rtf") ||
+      lowerName.endsWith(".pdf") ||
+      lowerName.endsWith(".docx") ||
+      lowerName.endsWith(".doc")
+
+    if (expectText) {
+      await failJob(
+        job.id,
+        job.documentId,
+        extracted.reason || "No extractable text"
+      )
+      return { ok: false as const, reason: "empty_text" }
+    }
+
+    // Other office binaries (e.g. xlsx): storage-only indexed, soft note
     try {
       const { deleteDocumentChunks } = await import("@/lib/qdrant")
       await deleteDocumentChunks(doc.id)

@@ -105,6 +105,24 @@ export async function uploadDocument(file: File): Promise<ConfirmedDocument> {
   return data.document
 }
 
+/** Fetch one owned document (for status polling after upload). */
+export async function getDocument(
+  documentId: string
+): Promise<ConfirmedDocument> {
+  const res = await fetch(`/api/documents/${documentId}`, {
+    method: "GET",
+    cache: "no-store",
+  })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as {
+      error?: string
+    } | null
+    throw new Error(data?.error ?? "Failed to load document")
+  }
+  const data = (await res.json()) as { document: ConfirmedDocument }
+  return data.document
+}
+
 /** Lists documents for the signed-in user only (server enforces ownership). */
 export async function listDocuments(options?: {
   status?: "pending" | "ready" | "processing" | "indexed" | "failed"

@@ -9,6 +9,7 @@
  *
  * Requires: DATABASE_URL, S3_*, REDIS_URL, QDRANT_URL, GEMINI_API_KEY
  * PDF: PDF_EXTRACT_URL (pdf-extract service)
+ * DOCX: Mammoth in-process (no extra service)
  */
 import { config } from "dotenv"
 import { resolve } from "node:path"

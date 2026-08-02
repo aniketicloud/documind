@@ -180,7 +180,15 @@ export async function* streamRagAnswer(options: {
   })
 
   if (note === "none_indexed") {
-    yield "I can only answer from **indexed** documents. The attached file(s) are not indexed yet (still processing, failed, or not text-extractable for RAG). Open **My documents**, wait for status `indexed`, and use a `.txt` / `.md` / `.csv` or a **text-based PDF**. Ensure `docker compose up -d` is running (includes the ingest worker and PDF extract service). You can still chat without attachments, or switch model in the composer if one provider is rate-limited."
+    yield "I can only answer from **indexed** documents. The attached file(s) are not indexed yet (still processing, failed, or not text-extractable for RAG). Open **My documents**, wait for status `indexed`, and use a `.txt` / `.md` / `.csv`, **`.docx`**, or a **PDF** (text or scanned). Ensure `docker compose up -d` is running (includes the ingest worker and PDF extract service). You can still chat without attachments, or switch model in the composer if one provider is rate-limited."
+    return []
+  }
+
+  // Indexed rows with no vectors (e.g. worker missing DOCX extractor, empty extract
+  // marked storage-only, or reprocess needed). Do not ask the model to invent content.
+  if (note === "no_chunks" || chunks.length === 0) {
+    const names = indexedDocs.map((d) => d.name).join(", ") || "the selected file(s)"
+    yield `I found **${names}** as indexed, but there is **no searchable text** in the knowledge store for them (no chunks). That usually means extract produced no text, or ingest ran before the current extractor was available.\n\n**What to try:**\n1. Open **My documents** → **Reprocess** the file (after \`docker compose up -d --build ingest-worker\` if you just added DOCX support).\n2. Prefer \`.docx\` (not legacy \`.doc\`), \`.txt\` / \`.md\` / \`.csv\`, or a PDF with real text / OCR.\n3. Wait until status is **Indexed**, then ask again with the file **checked** in the documents panel.`
     return []
   }
 

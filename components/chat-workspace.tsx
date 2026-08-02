@@ -77,6 +77,7 @@ import {
 import { DOCUMENT_ACCEPT, validateDocumentFile } from "@/lib/document-types"
 import {
   describeFile,
+  getDocument,
   listDocuments,
   uploadDocument,
   type ListedDocument,
@@ -99,7 +100,13 @@ type AttachedDocument = {
   documentId?: string
   name: string
   size?: number | null
+  /** Upload pipeline: uploading → ready (stored) | error */
   status: "uploading" | "ready" | "error"
+  /**
+   * Server ingest status for the document row (pending/ready/processing/indexed/failed).
+   * Used by the documents panel badge — never hardcode as "ready".
+   */
+  ingestStatus?: string
   error?: string
   source: "upload" | "library"
 }
@@ -377,12 +384,13 @@ export function ChatWorkspace({
     prevPinnedIdsRef.current = pinnedIds
   }, [scopedDocuments])
 
-  // Poll status while any chat doc is still processing
+  const isTerminalIngest = (status?: string) =>
+    status === "indexed" || status === "failed"
+
+  // Existing chat: poll scoped pins until all terminal
   React.useEffect(() => {
     if (mode !== "chat" || !chatId) return
-    const pending = scopedDocuments.some(
-      (d) => d.status !== "indexed" && d.status !== "failed"
-    )
+    const pending = scopedDocuments.some((d) => !isTerminalIngest(d.status))
     if (!pending) return
     const t = window.setInterval(() => {
       void (async () => {
@@ -393,9 +401,77 @@ export function ChatWorkspace({
           // ignore poll errors
         }
       })()
-    }, 3000)
+    }, 2500)
     return () => window.clearInterval(t)
   }, [mode, chatId, scopedDocuments])
+
+  // Staged uploads (usually /new): poll real ingest status until indexed/failed
+  const pendingStagedIdsKey = React.useMemo(() => {
+    return attachments
+      .filter(
+        (a) =>
+          a.documentId &&
+          a.status === "ready" &&
+          !isTerminalIngest(a.ingestStatus)
+      )
+      .map((a) => a.documentId as string)
+      .sort()
+      .join(",")
+  }, [attachments])
+
+  React.useEffect(() => {
+    if (!pendingStagedIdsKey) return
+    const pendingIds = pendingStagedIdsKey.split(",").filter(Boolean)
+    if (pendingIds.length === 0) return
+
+    let cancelled = false
+    const pollOnce = async () => {
+      await Promise.all(
+        pendingIds.map(async (id) => {
+          try {
+            const doc = await getDocument(id)
+            if (cancelled) return
+            setAttachments((current) => {
+              let changed = false
+              const next = current.map((item) => {
+                if (item.documentId !== id) return item
+                if (
+                  item.ingestStatus === doc.status &&
+                  item.name === doc.name &&
+                  (item.size ?? null) === (doc.size ?? null)
+                ) {
+                  return item
+                }
+                changed = true
+                return {
+                  ...item,
+                  name: doc.name,
+                  size: doc.size ?? item.size,
+                  ingestStatus: doc.status,
+                  error:
+                    doc.status === "failed"
+                      ? doc.errorMessage || item.error
+                      : item.error,
+                }
+              })
+              return changed ? next : current
+            })
+          } catch {
+            // ignore single-doc poll errors
+          }
+        })
+      )
+    }
+
+    void pollOnce()
+    const t = window.setInterval(() => {
+      void pollOnce()
+    }, 2500)
+    return () => {
+      cancelled = true
+      window.clearInterval(t)
+    }
+  }, [pendingStagedIdsKey])
 
   React.useEffect(() => {
     let cancelled = false
@@ -555,6 +631,7 @@ export function ChatWorkspace({
                     name: doc.name,
                     size: doc.size,
                     status: "ready" as const,
+                    ingestStatus: doc.status || "processing",
                     error: undefined,
                   }
                 : item
@@ -648,6 +725,7 @@ export function ChatWorkspace({
           name: doc.name,
           size: doc.size,
           status: "ready",
+          ingestStatus: doc.status || "indexed",
           source: "library",
         },
       ]
@@ -752,28 +830,18 @@ export function ChatWorkspace({
               name: d.name,
               contentType: null as string | null,
               size: d.size ?? null,
-              status: "ready",
+              status: d.ingestStatus || "processing",
             }))
-    const sentAttachments = panelDocs.map((doc) =>
-      "status" in doc && typeof (doc as { status?: string }).status === "string"
-        ? {
-            id: doc.id,
-            name: doc.name,
-            contentType:
-              "contentType" in doc
-                ? ((doc as ChatScopedDocument).contentType ?? null)
-                : null,
-            size: doc.size ?? null,
-            status: (doc as { status: string }).status,
-          }
-        : {
-            id: doc.id,
-            name: doc.name,
-            contentType: null as string | null,
-            size: doc.size ?? null,
-            status: "ready",
-          }
-    )
+    const sentAttachments = panelDocs.map((doc) => ({
+      id: doc.id,
+      name: doc.name,
+      contentType:
+        "contentType" in doc
+          ? ((doc as ChatScopedDocument).contentType ?? null)
+          : null,
+      size: doc.size ?? null,
+      status: doc.status,
+    }))
     // Optimistic user bubble + streaming assistant
     const tempUserId = `temp-user-${crypto.randomUUID()}`
     const tempAssistantId = `temp-assistant-${crypto.randomUUID()}`
@@ -997,7 +1065,8 @@ export function ChatWorkspace({
               id: d.documentId as string,
               name: d.name,
               size: d.size,
-              status: "ready",
+              // Real server status (polled); never hardcode "ready"
+              status: d.ingestStatus || "processing",
               selectable: true,
             })),
           ...attachments
@@ -1296,7 +1365,7 @@ export function ChatWorkspace({
                                 No indexed documents
                               </EmptyTitle>
                               <EmptyDescription className="text-xs">
-                                Upload a .txt, .md, .csv, or PDF (text or scan)
+                                Upload a .txt, .md, .csv, .docx, or PDF
                                 in My documents and wait until status is
                                 indexed (docker compose must be running).
                               </EmptyDescription>
